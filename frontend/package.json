@@ -1,0 +1,18 @@
+{
+  "name": "diabretino-frontend",
+  "version": "1.0.0",
+  "description": "Diabetic Retinopathy Clinical Severity AI Frontend GUI",
+  "scripts": {
+    "start": "npx -y serve . -l 3000",
+    "dev": "npx -y serve . -l 3000"
+  },
+  "keywords": [
+    "diabetic-retinopathy",
+    "ophthalmology",
+    "vision-transformer",
+    "grad-cam",
+    "cnn"
+  ],
+  "author": "Antigravity AI",
+  "license": "MIT"
+}

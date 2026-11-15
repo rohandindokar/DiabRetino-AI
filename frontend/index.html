@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiabRetino AI — Attention-Based CNN & Vision Transformer for Diabetic Retinopathy</title>
+    <meta name="description" content="Clinical-grade Diabetic Retinopathy severity classification and Grad-CAM visual attention mapping using Hybrid Vision Transformers and Attention-based CNNs.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Background Ambient Glow Mesh -->
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+    <div class="ambient-glow glow-3"></div>
+
+    <!-- Application Navigation Bar -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="brand-group">
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                        <path d="M2.05 12a10.99 10.99 0 0 1 19.9 0 10.99 10.99 0 0 1-19.9 0z"/>
+                        <circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <div class="brand-title">DiabRetino <span class="badge-ai">HYBRID ViT-CNN</span></div>
+                    <div class="brand-subtitle">Clinical Retinal AI Diagnostic System</div>
+                </div>
+            </div>
+
+            <nav class="nav-controls">
+                <!-- API Connection Status Badge -->
+                <div class="status-indicator" id="apiStatusBadge" title="Backend API Health">
+                    <span class="status-dot pulse-green"></span>
+                    <span class="status-text" id="apiStatusText">Checking API...</span>
+                </div>
+
+                <!-- View Switcher Tabs -->
+                <div class="view-switcher">
+                    <button class="nav-tab active" id="tabSingleView" onclick="switchMainTab('single')">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        Single Scan
+                    </button>
+                    <button class="nav-tab" id="tabBatchView" onclick="switchMainTab('batch')">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"/>
+                            <rect x="14" y="3" width="7" height="7"/>
+                            <rect x="14" y="14" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/>
+                        </svg>
+                        Batch Screening
+                    </button>
+                </div>
+
+                <!-- Theme Toggle -->
+                <button class="icon-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+                    <svg class="sun-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"/>
+                        <line x1="12" y1="1" x2="12" y2="3"/>
+                        <line x1="12" y1="21" x2="12" y2="23"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                        <line x1="1" y1="12" x2="3" y2="12"/>
+                        <line x1="21" y1="12" x2="23" y2="12"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                    </svg>
+                    <svg class="moon-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+
+                <!-- API Settings Config Button -->
+                <button class="icon-btn" onclick="openSettingsModal()" title="API Settings & Server Config">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+        <!-- Hero Information Bar -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span class="pulse-ring"></span>
+                    <span>ICDR CLINICAL STANDARD &bull; MULTI-MODAL ATTENTION FUSION</span>
+                </div>
+                <h1 class="hero-title">Diabetic Retinopathy Severity Grading</h1>
+                <p class="hero-desc">
+                    Combines <strong>Squeeze-and-Excitation Attention CNNs</strong> (local lesion texture) and 
+                    <strong>Vision Transformers</strong> (global vascular topology) for ophthalmic screening with 
+                    <strong>Grad-CAM explainability</strong>.
+                </p>
+            </div>
+        </section>
+
+        <!-- 1-Click Interactive Sample Gallery -->
+        <section class="sample-gallery-section">
+            <div class="section-header-compact">
+                <span class="section-eyebrow">INSTANT CLINICAL EVALUATION</span>
+                <span class="section-title-sm">Click any sample to evaluate all 5 ICDR stages immediately:</span>
+            </div>
+            <div class="sample-cards-grid" id="samplesContainer">
+                <!-- Dynamically populated via JavaScript -->
+                <div class="sample-card skeleton-card"></div>
+                <div class="sample-card skeleton-card"></div>
+                <div class="sample-card skeleton-card"></div>
+                <div class="sample-card skeleton-card"></div>
+                <div class="sample-card skeleton-card"></div>
+            </div>
+        </section>
+
+        <!-- SINGLE SCAN VIEW -->
+        <div id="singleScanSection" class="tab-view-container active">
+            <div class="workspace-grid">
+                <!-- Left Panel: Input & Controls -->
+                <div class="card-glass panel-input">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            Retinal Fundus Image
+                        </div>
+                        <span class="helper-tag">JPEG / PNG</span>
+                    </div>
+
+                    <!-- Drag & Drop Zone -->
+                    <div class="drop-zone" id="dropZone">
+                        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" style="display: none;">
+                        <div class="drop-content" id="dropPrompt">
+                            <div class="upload-icon-wrapper">
+                                <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.8">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                            </div>
+                            <div class="drop-title">Drag & drop retinal scan here</div>
+                            <div class="drop-subtitle">or <button type="button" class="btn-link" onclick="document.getElementById('fileInput').click()">browse from computer</button></div>
+                            <div class="drop-hints">
+                                <span>Paste from clipboard (Ctrl+V)</span> &bull; <span>Auto-centered retina</span>
+                            </div>
+                        </div>
+
+                        <!-- Image Preview in Drop Zone -->
+                        <div class="image-preview-wrapper" id="previewWrapper" style="display: none;">
+                            <img id="previewImg" alt="Retinal Fundus Preview" src="">
+                            <button class="btn-clear-img" onclick="clearSelectedImage(event)" title="Remove image">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Model Configuration & Settings -->
+                    <div class="control-group">
+                        <label class="control-label" for="modelSelect">
+                            <span>Deep Learning Architecture</span>
+                            <span class="info-tooltip" title="Hybrid combines Attention-CNN features with Vision Transformer tokens for maximum clinical accuracy.">?</span>
+                        </label>
+                        <select id="modelSelect" class="form-select">
+                            <option value="hybrid_vit_cnn" selected>★ Hybrid ViT + Attention-CNN (Flagship Model)</option>
+                            <option value="se_resnet18">SE-ResNet18 (Attention-Based CNN)</option>
+                            <option value="vit_dr">Vision Transformer (ViT-Patch16)</option>
+                        </select>
+                    </div>
+
+                    <!-- Preprocessing Filter Toggle -->
+                    <div class="control-switch-row">
+                        <div class="switch-info">
+                            <div class="switch-title">Ben Graham Contrast Enhancement</div>
+                            <div class="switch-desc">Subtracts local color via Gaussian blur to highlight microaneurysms and exudates</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="preprocessToggle" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Submit Analysis Button -->
+                    <button id="analyzeBtn" class="btn-primary" onclick="runAnalysis()">
+                        <span class="btn-text">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                            Run Diagnostic Analysis
+                        </span>
+                        <span class="spinner" style="display: none;"></span>
+                    </button>
+                </div>
+
+                <!-- Right Panel: Visualizer & Diagnostic Output -->
+                <div class="card-glass panel-output" id="outputPanel">
+                    <!-- Default Idle State -->
+                    <div class="idle-state" id="idleState">
+                        <div class="idle-icon">
+                            <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <h3>Awaiting Retinal Fundus Scan</h3>
+                        <p>Upload a fundus photograph or click one of the pre-loaded clinical samples above to trigger severity grading, Grad-CAM attention heatmap, and clinical guidelines.</p>
+                    </div>
+
+                    <!-- Active Analysis Results Container -->
+                    <div class="results-container" id="resultsContainer" style="display: none;">
+                        <!-- Primary Diagnosis Header -->
+                        <div class="diagnosis-header" id="diagnosisHeader">
+                            <div class="diagnosis-badge-group">
+                                <div class="stage-pill" id="stagePill">Stage 0</div>
+                                <div class="urgency-pill" id="urgencyPill">Low Urgency</div>
+                            </div>
+                            <h2 class="diagnosis-title" id="diagnosisTitle">No Diabetic Retinopathy</h2>
+                            <div class="confidence-meter-row">
+                                <div class="confidence-label">Model Confidence:</div>
+                                <div class="confidence-value" id="confidenceValue">95.4%</div>
+                                <div class="latency-tag" id="latencyTag">412 ms &bull; Hybrid ViT-CNN</div>
+                            </div>
+                        </div>
+
+                        <!-- Visualizer Modes Switcher -->
+                        <div class="vis-tabs">
+                            <button class="vis-tab active" onclick="switchVisTab('overlay')">Grad-CAM Overlay</button>
+                            <button class="vis-tab" onclick="switchVisTab('split')">Side-by-Side Comparison</button>
+                            <button class="vis-tab" onclick="switchVisTab('heatmap')">Attention Heatmap</button>
+                        </div>
+
+                        <!-- Visualizer Display Viewport -->
+                        <div class="vis-viewport">
+                            <!-- Mode 1: Interactive Overlay with Opacity Slider -->
+                            <div id="visOverlayView" class="vis-content-view active">
+                                <div class="canvas-container">
+                                    <img id="visBaseImg" class="vis-img-layer" alt="Base Retina" src="">
+                                    <img id="visHeatmapImg" class="vis-img-layer heat-overlay" alt="Heatmap Overlay" src="">
+                                </div>
+                                <div class="slider-control-bar">
+                                    <span class="slider-label">Heatmap Opacity:</span>
+                                    <input type="range" id="opacitySlider" min="0" max="100" value="60" oninput="adjustHeatmapOpacity(this.value)">
+                                    <span class="slider-val" id="opacityValueText">60%</span>
+                                </div>
+                            </div>
+
+                            <!-- Mode 2: Side-by-Side Comparison -->
+                            <div id="visSplitView" class="vis-content-view" style="display: none;">
+                                <div class="comparison-grid">
+                                    <div class="comp-col">
+                                        <div class="comp-label">Original Fundus</div>
+                                        <img id="compOriginalImg" class="comp-thumb" alt="Original Fundus" src="">
+                                    </div>
+                                    <div class="comp-col">
+                                        <div class="comp-label">Ben Graham Enhanced</div>
+                                        <img id="compPreprocessedImg" class="comp-thumb" alt="Ben Graham Filter" src="">
+                                    </div>
+                                    <div class="comp-col">
+                                        <div class="comp-label">Grad-CAM Hotspots</div>
+                                        <img id="compHeatmapImg" class="comp-thumb" alt="Attention Map" src="">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Mode 3: Standalone Heatmap -->
+                            <div id="visHeatmapView" class="vis-content-view" style="display: none;">
+                                <div class="single-vis-wrapper">
+                                    <img id="visStandaloneHeatmap" class="comp-thumb" alt="Grad-CAM Hotspot Map" src="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Probability Distribution Breakdown -->
+                        <div class="prob-section">
+                            <div class="prob-title">ICDR Severity Distribution</div>
+                            <div class="prob-bars-list" id="probBarsList">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Clinical Findings & Doctor Guidelines -->
+                        <div class="clinical-report-card">
+                            <div class="report-section">
+                                <div class="report-header">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <line x1="12" y1="16" x2="12" y2="12"/>
+                                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                                    </svg>
+                                    ICDR Diagnostic Criteria
+                                </div>
+                                <p class="report-text" id="icdrCriteriaText">Loading...</p>
+                            </div>
+
+                            <div class="report-section">
+                                <div class="report-header">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="20 6 9 17 4 12"/>
+                                    </svg>
+                                    Clinical Biomarkers Identified
+                                </div>
+                                <ul class="findings-list" id="findingsList">
+                                    <!-- Populated dynamically -->
+                                </ul>
+                            </div>
+
+                            <div class="report-section action-section">
+                                <div class="report-header">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                        <polyline points="22 4 12 14.01 9 11.01"/>
+                                    </svg>
+                                    Recommended Clinical Action
+                                </div>
+                                <p class="report-text action-text" id="actionText">Loading...</p>
+                                <div id="laserWarning" class="laser-warning-badge" style="display: none;">
+                                    ⚠️ Laser Photocoagulation / Anti-VEGF Referral Indicated
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons: Print Report -->
+                        <div class="action-buttons-row">
+                            <button class="btn-secondary" onclick="openReportModal()">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                    <polyline points="10 9 9 9 8 9"/>
+                                </svg>
+                                Generate Ophthalmic Report
+                            </button>
+                            <button class="btn-secondary" onclick="downloadVisualization()">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                Save Heatmap Overlay
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BATCH SCREENING VIEW -->
+        <div id="batchScreeningSection" class="tab-view-container" style="display: none;">
+            <div class="card-glass batch-workspace">
+                <div class="batch-header">
+                    <div>
+                        <h2>Batch Retinal Screening Mode</h2>
+                        <p>Upload a clinic batch of up to 20 retinal fundus images for simultaneous severity grading.</p>
+                    </div>
+                    <div class="batch-controls">
+                        <input type="file" id="batchFileInput" multiple accept="image/jpeg,image/png" style="display: none;">
+                        <button class="btn-primary" onclick="document.getElementById('batchFileInput').click()">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            Select Batch Images
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Batch Summary Distribution Grid -->
+                <div class="batch-summary-cards" id="batchSummaryGrid" style="display: none;">
+                    <div class="summary-pill" style="border-left-color: #10b981;">
+                        <div class="sum-count" id="countStage0">0</div>
+                        <div class="sum-label">No DR (Stage 0)</div>
+                    </div>
+                    <div class="summary-pill" style="border-left-color: #eab308;">
+                        <div class="sum-count" id="countStage1">0</div>
+                        <div class="sum-label">Mild (Stage 1)</div>
+                    </div>
+                    <div class="summary-pill" style="border-left-color: #f97316;">
+                        <div class="sum-count" id="countStage2">0</div>
+                        <div class="sum-label">Moderate (Stage 2)</div>
+                    </div>
+                    <div class="summary-pill" style="border-left-color: #ef4444;">
+                        <div class="sum-count" id="countStage3">0</div>
+                        <div class="sum-label">Severe (Stage 3)</div>
+                    </div>
+                    <div class="summary-pill" style="border-left-color: #a855f7;">
+                        <div class="sum-count" id="countStage4">0</div>
+                        <div class="sum-label">Proliferative (Stage 4)</div>
+                    </div>
+                </div>
+
+                <!-- Batch Table -->
+                <div class="table-responsive" id="batchTableWrapper">
+                    <table class="batch-table" id="batchTable">
+                        <thead>
+                            <tr>
+                                <th>Scan Preview</th>
+                                <th>File Name</th>
+                                <th>Diagnosis</th>
+                                <th>Severity Tier</th>
+                                <th>Confidence</th>
+                                <th>Clinical Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center py-6 text-muted">No batch files uploaded yet. Select images above to begin.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Medical Diagnostic Report Modal -->
+    <div class="modal-backdrop" id="reportModal" style="display: none;">
+        <div class="modal-card print-report-card">
+            <div class="modal-header">
+                <h3>Ophthalmic Clinical Examination Report</h3>
+                <button class="modal-close" onclick="closeReportModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="reportModalBody">
+                <!-- Printable clinical report template -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeReportModal()">Close</button>
+                <button class="btn-primary" onclick="window.print()">Print / Save PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Settings Modal -->
+    <div class="modal-backdrop" id="settingsModal" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>System & API Configuration</h3>
+                <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="control-group">
+                    <label class="control-label" for="apiUrlInput">Backend API Base URL</label>
+                    <input type="text" id="apiUrlInput" class="form-input" value="http://localhost:8000" placeholder="e.g. http://localhost:8000 or https://your-domain.com">
+                    <small class="helper-text">Change this when deploying frontend and backend to separate cloud servers (e.g. Render, Railway, Vercel).</small>
+                </div>
+                <div class="control-group">
+                    <button class="btn-secondary" onclick="testCustomApiConnection()">Test Server Connection</button>
+                    <span id="settingsTestStatus" class="ml-2 text-sm"></span>
+                </div>
+                <hr class="divider">
+                <div class="info-box">
+                    <p><strong>Interactive Swagger Documentation:</strong></p>
+                    <a id="swaggerLink" href="http://localhost:8000/docs" target="_blank" class="text-accent">http://localhost:8000/docs</a>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="saveSettings()">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
