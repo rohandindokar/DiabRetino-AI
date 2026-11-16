@@ -61,9 +61,12 @@ git commit -m "Initial commit: DiabRetino AI - DR Severity Grading with Hybrid V
 The project already has a `.gitignore` that excludes:
 - `venv/` — Python virtual environment
 - `__pycache__/` — Python bytecode
-- `*.pth`, `weights/` — Model weight files (too large for git; upload separately)
+- `data/` — the raw APTOS 2019 dataset (8+ GB, never committed; train locally)
 - `.vscode/`, `.idea/` — IDE files
-- `test_api.py` — Local test script
+
+**The trained flagship checkpoint (`backend/weights/hybrid_vit_cnn.pth`, ~53 MB)
+IS committed** so the Render build ships a working model. Only `data/` is kept
+out of git.
 
 ### Step 2.4 — Verify what will be committed
 
@@ -130,24 +133,12 @@ git push -u origin main
 
 Open your repository URL in a browser and confirm all files are visible.
 
-### Step 3.4 — Upload model weights (separately)
+### Step 3.4 — Model weights ship in the repo
 
-Model weights (`.pth` files) are too large for git. Upload them to:
-
-**Option A — Google Drive / Dropbox:**
-1. Upload your trained `.pth` files
-2. Share a direct download link
-3. Download them on your deployment server
-
-**Option B — Hugging Face Hub:**
-1. Create a model repo at https://huggingface.co/new
-2. Upload `.pth` files via web UI or CLI
-3. Use the download URL in your deployment
-
-**Option C — GitHub Releases:**
-1. Go to your repo → Releases → Draft a new release
-2. Attach `.pth` files as release assets
-3. Download URL will be in the release page
+The trained flagship checkpoint is committed at `backend/weights/hybrid_vit_cnn.pth`
+(~53 MB), so Render's Docker build picks it up automatically — **no separate upload
+or Hugging Face step needed**. Only the raw `data/` dataset is kept out of git
+because it is too large.
 
 ---
 
@@ -230,7 +221,8 @@ Make sure your latest code is pushed (Step 3 above).
 ### Step 5.4 — Configure the service
 
 Under **Instance Type**:
-- Choose **Free** (for testing) or **Starter** ($7/month, recommended for production)
+- **Starter** ($7/month) — always-on, recommended for a live demo.
+- (Render's free tier was discontinued, so budget the Starter plan for the backend.)
 
 Under **Health Check Path**, set:
 ```
@@ -521,14 +513,14 @@ Go through every item to confirm everything works:
 - Ensure **Output Directory** is `.` (dot, not empty)
 - Do NOT set a build command for a static site
 
-### Backend cold start on Render (free tier)
-- Free tier spins down after 15 minutes of inactivity
-- First request after cold start takes 30-60 seconds (model loading)
-- Upgrade to Starter ($7/month) for always-on
+### Backend cold start on Render
+- First request after the service idles may take 30-60 seconds (model loading)
+- The Starter plan keeps the service warm more reliably than a free tier would
 
-### "File too large" error when uploading weights
-- Max weight file size is 500MB
-- If your model is larger, use HuggingFace Hub or cloud storage
+### Weight file is missing at deploy time
+- If `backend/weights/hybrid_vit_cnn.pth` is absent, the inference engine falls
+  back to a freshly-initialised model so the API still returns well-formed
+  (but untrained) predictions. To ship real predictions, commit the `.pth`.
 
 ---
 
@@ -536,12 +528,11 @@ Go through every item to confirm everything works:
 
 | What | Where | Cost |
 |------|-------|------|
-| GitHub repo | github.com | Free |
-| Backend (Render Free) | render.com | Free (spins down after inactivity) |
-| Backend (Render Starter) | render.com | $7/month (always on) |
-| Frontend (Vercel Free) | vercel.com | Free (100GB bandwidth) |
-| Frontend (Vercel Pro) | vercel.com | $20/month |
-| Model weights storage | huggingface.co | Free |
-| Custom domain | Any registrar | ~$10/year |
+| GitHub repo + committed model weights | github.com | Free |
+| Backend (Render) | render.com | Starter $7/month (free tier discontinued) |
+| Frontend (Vercel) | vercel.com | Free (hobby plan, 100GB bandwidth) |
+| Custom domain (optional) | Any registrar | ~$10/year |
 
-**Total to go live: $0/month** (using free tiers), or **$7/month** for production-grade always-on hosting.
+**Total to go live: ~$7/month** (Render Starter backend + free Vercel frontend).
+The trained model ships inside the repo, so there is no separate weights-hosting
+cost.

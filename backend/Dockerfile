@@ -1,39 +1,37 @@
-# Multi-stage lightweight Dockerfile for Diabetic Retinopathy API Backend
+# Diabetic Retinopathy AI - FastAPI backend (PyTorch CPU build)
 FROM python:3.12-slim
 
-# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000
 
 WORKDIR /app
 
-# Install system dependencies for imaging libraries
+# System deps for imaging + healthcheck curl
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libgl1 \
-    libglib2.0-0 \
-    curl \
+    build-essential libgl1 libglib2.0-0 curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch CPU first (compact size for fast builds and low memory footprint)
+# PyTorch CPU wheels (compact; GPU build is local-only)
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-# Install application dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Application code + real reference samples + trained weights (committed to git)
 COPY app/ ./app/
 COPY run.py .
+COPY train.py .
+COPY regen_report.py .
+COPY weights/ ./weights/
+COPY reports/ ./reports/
 
-# Generate sample fundus images inside container for testing
-RUN python app/samples/generate_samples.py
+# The real APTOS reference samples and trained checkpoints ship in the image.
+# If a weight file is ever absent, the inference engine falls back to a
+# freshly-initialised architecture so the API still returns well-formed output.
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/api/health || exit 1
 
 EXPOSE 8000
-
 CMD ["python", "run.py", "--host", "0.0.0.0", "--port", "8000"]

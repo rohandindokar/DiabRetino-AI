@@ -1,252 +1,249 @@
-# Optimal Detection of Diabetic Retinopathy Severity Using Attention-Based CNN and Vision Transformers
+# DiabRetino AI — Diabetic Retinopathy Severity Grading
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Framework: PyTorch](https://img.shields.io/badge/Framework-PyTorch-EE4C2C.svg)](https://pytorch.org/)
-[![API: FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
-[![Docker: Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
+A clinical-grade web app that classifies retinal fundus photographs into the five
+ICDR diabetic-retinopathy (DR) severity stages, using a **hybrid deep-learning
+model** that combines an attention-based CNN with a Vision Transformer, and shows
+*where the model was looking* with Grad-CAM attention maps.
 
-A production-ready, clinical-grade medical AI system combining **Attention-Based Convolutional Neural Networks (SE-ResNet18)** and **Vision Transformers (ViT)** to classify the severity levels of **Diabetic Retinopathy (DR)** into 5 clinical stages with **Grad-CAM visual attention mapping**, **Ben Graham retinal preprocessing**, and **automated ophthalmic report generation**.
+```
+Retinal fundus scan (224×224 RGB)
+   │
+   ├── Ben Graham local color-subtraction (contrast enhancement)
+   │
+   ▼
+┌────────────────────────────┐
+│   HYBRID DUAL BACKBONE     │
+│  Branch 1: SE-ResNet18     │  ← local lesion texture (microaneurysms,
+│  Branch 2: Vision Transform│     exudates, hemorrhages)
+└──────────────┬─────────────┘  ← global vascular context
+   Gated feature fusion
+   │
+   ▼
+5-class softmax  ──►  ICDR stage  +  confidence  +  Grad-CAM heatmap
+                       +  clinical guidelines  +  printable report
+```
 
 ---
 
-## 📸 Architecture & Clinical Severity Pipeline
+## 🎯 What this project actually does (the short version)
 
-```
-  Input Retinal Fundus Scan (224×224 RGB)
-                  │
-     ┌────────────┴────────────┐
-     ▼                         ▼
-Ben Graham Local          Auto-Circular
-Color Subtraction         Aperture Crop
-     │                         │
-     └────────────┬────────────┘
-                  ▼
-   ┌──────────────────────────────┐
-   │     HYBRID DUAL BACKBONE     │
-   ├──────────────────────────────┤
-   │  Branch 1: SE-ResNet18       │ ──► Local lesion textures (microaneurysms, blot hemorrhages)
-   │  Branch 2: Vision Transformer│ ──► Global retinal context (optic disc & vascular arcade)
-   └──────────────┬───────────────┘
-                  ▼
-     Gated Multi-Modal Fusion (768-d)
-                  │
-         ┌────────┴────────┐
-         ▼                 ▼
-   Softmax (5 Classes)  Grad-CAM Visual Attention
-   [Stage 0 to Stage 4] (Heatmap Lesion Hotspots)
-         │                 │
-         └────────┬────────┘
-                  ▼
-  Clinical ICDR Report & Diagnostic Guidelines
-```
+Diabetic retinopathy is the leading cause of vision loss among working-age adults
+with diabetes. Doctors grade it manually across five ICDR stages (0 = no DR …
+4 = proliferative). This project automates that grading:
 
-### The 5 Clinical Severity Stages (ICDR Standard)
-1. **Stage 0 — No DR**: Normal retina; no microaneurysms or vascular abnormalities. (Routine 12-month follow-up)
-2. **Stage 1 — Mild NPDR**: Microaneurysms only. Earliest clinically visible phase. (6–12 month review)
-3. **Stage 2 — Moderate NPDR**: Microaneurysms, hard exudates (lipid deposits), and blot hemorrhages. (3–6 month ophthalmology referral)
-4. **Stage 3 — Severe NPDR**: 4-2-1 rule (>20 intraretinal hemorrhages in 4 quadrants, venous beading in 2+ quadrants, prominent IRMA). (2–4 week urgent specialist referral)
-5. **Stage 4 — Proliferative DR (PDR)**: Neovascularization (NVD/NVE), preretinal/vitreous hemorrhages. (Immediate 24–48h referral for laser photocoagulation / anti-VEGF)
+1. **Input** — a single retinal photograph (or a batch of up to 20).
+2. **Preprocessing** — circular crop + Ben Graham contrast enhancement to make
+   microaneurysms and exudates stand out.
+3. **Classification** — a trained hybrid model outputs a 5-class probability
+   distribution and the most likely ICDR stage.
+4. **Explainability** — a Grad-CAM heatmap overlays the exact retinal regions
+   (bleeds, exudates, neovascular fronds) that drove the call, so a clinician
+   can see *why* the model decided.
+5. **Clinical reporting** — ICDR criteria, identified findings, recommended
+   action, and urgency level are returned as structured data and rendered as a
+   printable medical report.
+
+> ⚠️ **This is a research / educational screening tool, not a medical device.**
+> It supports, and does not replace, an ophthalmologist.
 
 ---
 
-## 📁 Repository Structure
+## 🧠 The model & the work that was done
+
+The flagship architecture is **`hybrid_vit_cnn`**:
+
+- **SE-ResNet18 branch** — Squeeze-and-Excitation ResNet18 (ImageNet-pretrained).
+  The SE blocks recalibrate channels so the network emphasises the few
+  retinal-feature channels that matter. Catches fine local texture:
+  microaneurysms, hard exudates, cotton-wool spots.
+- **Vision Transformer branch** — a compact ViT (16×16 patches, 4 encoder
+  layers) that models global spatial relationships: optic-disc position,
+  vascular arcade layout, and whether neovascularization is spreading.
+- **Gated fusion head** — the two feature vectors (512 + 192) are concatenated,
+  passed through a learned sigmoid gate, then through a small MLP to the 5
+  ICDR classes. Gating lets the model learn *when* to trust the CNN vs the
+  Transformer for a given image.
+
+**Training was done on the APTOS 2019 dataset** (3,662 labelled fundus images,
+5 classes, with class weighting to handle the imbalance — stage 0 is 49% of the
+data, stage 3 only 5%). Because the dataset is class-imbalanced, an inverse-
+frequency `CrossEntropyLoss` weighting is used so the rare severe classes are not
+swamped.
+
+Two more models are served for comparison (`se_resnet18`, `vit_dr`) so a viewer
+can switch architectures live in the UI.
+
+### What the sample images are
+The reference gallery at the top of the app is populated with **one real APTOS
+2019 fundus photo per stage** (extracted from the training set, not synthetic):
+
+| Stage | File | What you can see |
+|-------|------|------------------|
+| 0 | `stage_0_no_dr.png` | Clean retina, healthy optic disc, no lesions |
+| 1 | `stage_1_mild.png` | Scattered microaneurysms (tiny red dots) |
+| 2 | `stage_2_moderate.png` | Hard exudates + intraretinal hemorrhages |
+| 3 | `stage_3_severe.png` | Dense exudates, 4-quadrant hemorrhages |
+| 4 | `stage_4_proliferative.png` | Neovascularization / vitreous bleed |
+
+If the real dataset is not present (e.g. inside a Docker build), the gallery
+falls back to clearly-labelled **synthetic** fundus images so the UI still
+demonstrates the full pipeline.
+
+### Where to get more test images
+- **APTOS 2019** (used here): https://www.kaggle.com/competitions/aptos2019-blindness-detection
+- **EyePACS** (DR with macular edema): https://www.eyepacs.org/resources/data-downloads/eyepacs-database
+- **OCT-DR / IDRD** (multi-modal OCT + DR): https://ieee-fog2018.drive.gr/ / https://www.eye.ku.nl/research/ophthalmic-imaging-ai-ophthalmology-ai-research
+- **ESAR / MESSIDOR-2**: classic NPDR datasets for the older 5-level ICDR coding.
+
+---
+
+## 📊 Measurable impact / metrics
+
+After training, per-architecture metrics are written to
+[`backend/reports/metrics_report.json`](backend/reports/metrics_report.json).
+The live values are also served by `GET /api/metrics` and shown in the UI's
+"Model performance" panel. From the latest training run on an NVIDIA RTX 3050:
+
+### Flagship — `hybrid_vit_cnn` (gated SE-ResNet18 + ViT fusion)
+
+| Metric | Value |
+|--------|-------|
+| **Held-out validation accuracy** | **74.6%** |
+| Macro F1 / Weighted F1 | 53.7% / 73.2% |
+| Macro Precision / Recall | 56.7% / 58.5% |
+| Training set size | 2,929 train / 733 held-out val (3,662 APTOS) |
+| Device / time | NVIDIA RTX 3050, ~96 min (15 epochs) |
+
+**Per-class performance on the held-out validation set** ("how many times it
+was right" for each stage):
+
+| Stage | Precision | Recall | F1 | # samples (val) |
+|-------|-----------|--------|-----|-----------|
+| No DR | 94.7% | **98.9%** | 96.8% | 361 |
+| Mild | 50.6% | 60.8% | 55.2% | 74 |
+| Moderate | 65.9% | 57.0% | 61.1% | 200 |
+| Severe | 32.1% | 69.2% | 43.9% | 39 |
+| Proliferative | 40.0% | 6.8% | 11.6% | 59 |
+
+**Confusion matrix** (rows = actual, columns = predicted, held-out val):
 
 ```
-.
-├── backend/                         # Deployable FastAPI Deep Learning Backend
+              NoDR  Mild  Mod   Sev   Pro
+No_DR           357    2   2   0     0
+Mild             7   45  22   0     0
+Moderate        11   31 114  38    6
+Severe            0   5   7  27    0
+Proliferative    2   6  28  19     4
+```
+
+> **Reading these numbers honestly:** The model is strong where the data is dense
+> (No DR: 98% recall) and degrades on the rarer, visually-overlapping severe and
+> proliferative stages — neovascularization (stage 4) is frequently confused with
+> severe NPDR (stage 3), which is a well-known hard case in DR grading. Recall on
+> the critical *proliferative* class is the weakest point and the main avenue for
+> future improvement (more stage-4 examples / class-balanced augmentation).
+
+A short, human-readable summary of these numbers is generated at
+[`reports/REPORT.md`](reports/REPORT.md) (run `python make_report.py` to regenerate).
+The full machine-readable report is [`backend/reports/metrics_report.json`](backend/reports/metrics_report.json).
+
+---
+
+## 📁 Repository structure
+
+```
+├── backend/
 │   ├── app/
-│   │   ├── api/routes.py            # REST endpoints (predict, batch, samples, weights)
-│   │   ├── core/config.py           # ICDR clinical criteria, findings & metadata
+│   │   ├── main.py                # FastAPI app, CORS, lifespan, timing
+│   │   ├── api/routes.py          # /predict, /batch, /samples, /metrics, /models
+│   │   ├── core/config.py         # ICDR classes + clinical metadata
 │   │   ├── models/
-│   │   │   ├── architectures.py     # SEBlock, SEResNet18, ViT, HybridViTAttentionCNN
-│   │   │   ├── gradcam.py           # Grad-CAM heatmap generator & colormap blender
-│   │   │   ├── inference.py         # Multi-model inference manager & clinical report
-│   │   │   └── preprocessing.py     # Ben Graham contrast filter & circle cropper
-│   │   ├── samples/                 # Pre-generated clinical fundus samples (Stage 0-4)
-│   │   └── main.py                  # FastAPI app with CORS & static mounting
-│   ├── run.py                       # CLI server runner
-│   ├── requirements.txt             # Production dependencies
-│   ├── Dockerfile                   # Containerized backend
-│   └── README.md
+│   │   │   ├── architectures.py   # SE-ResNet18, ViT, Hybrid fusion
+│   │   │   ├── gradcam.py         # Grad-CAM explainability
+│   │   │   ├── inference.py       # checkpoint loading + clinical report
+│   │   │   └── preprocessing.py   # Ben Graham + circular crop
+│   │   └── samples/               # real APTOS reference images (one per stage)
+│   ├── train.py                   # full training + evaluation pipeline
+│   ├── run.py                     # server entry point
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   ├── weights/                   # trained .pth checkpoints (committed)
+│   └── reports/                   # metrics_report.json + confusion matrices
 │
-├── frontend/                        # Deployable Ophthalmic GUI Frontend
-│   ├── css/style.css                # Glassmorphic clinical dark/light design system
-│   ├── js/app.js                    # UI controller, Grad-CAM slider, batch engine
-│   ├── samples/                     # 1-click test fundus samples (Stage 0-4)
-│   ├── index.html                   # Responsive clinical dashboard
-│   ├── nginx.conf                   # Nginx web server configuration
-│   ├── Dockerfile                   # Containerized frontend
-│   └── README.md
+├── frontend/
+│   ├── index.html / css/ / js/    # clinical dashboard (vanilla, no build step)
+│   ├── samples/                   # reference fundus images
+│   ├── nginx.conf / Dockerfile    # docker-compose static serving
+│   └── vercel.json                # Vercel static deployment
 │
-├── repo/                            # Original cloned research repository & notebook
-│   ├── DiabRetino.ipynb
-│   └── README.md
+├── data/                          # APTOS 2019 (NOT in git - too large)
+│   ├── train_images/  test_images/  train.csv  test.csv
 │
-├── docker-compose.yml               # One-command full-stack container deployment
-├── start_all.bat                    # Windows 1-click launcher
-├── start_all.ps1                    # PowerShell 1-click launcher
-└── README.md                        # Documentation
+├── reports/REPORT.md              # human-readable metrics summary
+├── docker-compose.yml
+├── DEPLOY.md                      # step-by-step cloud deployment
+└── README.md
 ```
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Run locally
 
-### Option 1: 1-Click Launch on Windows
-Double-click `start_all.bat` (or execute `start_all.ps1`).  
-This automatically:
-1. Starts the FastAPI backend at `http://localhost:8000`
-2. Starts the frontend GUI at `http://localhost:3000`
-3. Opens the application in your default web browser!
-
----
-
-### Option 2: Docker Compose (Production Full-Stack)
-Run both backend and frontend isolated in Docker containers:
-```bash
-docker compose up --build
-```
-- Frontend GUI: [http://localhost:3000](http://localhost:3000)
-- Backend API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
----
-
-### Option 3: Manual Step-by-Step
-
-#### 1. Start the Backend
+### 1. Backend
 ```bash
 cd backend
 python -m venv venv
-# Windows: venv\Scripts\activate
-# Linux/macOS: source venv/bin/activate
+venv\Scripts\activate            # Windows
 pip install -r requirements.txt
+
+# (one-time) extract the reference sample images from the dataset
 python app/samples/generate_samples.py
-python run.py --host 0.0.0.0 --port 8000 --reload
+
+# train the model  (needs the data/ folder + a GPU for ~20-40 min)
+python train.py
+
+# start the API
+python run.py                    # -> http://localhost:8000/docs
 ```
 
-#### 2. Start the Frontend
-In a new terminal:
+### 2. Frontend
 ```bash
 cd frontend
-python -m http.server 3000
+python -m http.server 3000       # -> http://localhost:3000
 ```
-Open your browser at `http://localhost:3000`.
+Then open http://localhost:3000 — the app auto-detects the local backend.
 
----
-
-## 🖥️ Frontend GUI Features
-
-- **1-Click Clinical Sample Gallery**: Test all 5 ICDR disease stages immediately with built-in retinal fundus scans.
-- **Drag & Drop / Clipboard Paste**: Drop any fundus image or paste directly from clipboard (`Ctrl+V`).
-- **Interactive Grad-CAM Heatmap Viewer**: Real-time slider to adjust heatmap blending opacity from 0% to 100%.
-- **Side-by-Side Comparison**: Original retina vs. Ben Graham Enhanced vs. Grad-CAM attention hotspots.
-- **Batch Screening Mode**: Upload up to 20 images at once for automated screening with summary statistics.
-- **Medical Examination Report**: Formatted clinical report with Patient ID, scan timestamp, model confidence, and ophthalmologist signature block, ready to print or export to PDF.
-- **Configurable Backend API URL**: Built-in settings modal to connect the frontend to any deployed cloud backend.
-
----
-
-## 🌐 Deploying to the Cloud
-
-### Backend Deployment (Render / Railway / Fly.io / AWS ECS)
-1. Point your cloud platform to the `backend/` directory.
-2. Select Docker build or Python 3.12 environment with `pip install -r requirements.txt`.
-3. Set start command: `python run.py --host 0.0.0.0 --port $PORT`
-
-### Frontend Deployment (Vercel / Netlify / Cloudflare Pages)
-1. Point your static host to the `frontend/` directory.
-2. Build command: None (pure static HTML/CSS/JS).
-3. Publish directory: `frontend`.
-4. Open the deployed website, click the **Settings** icon, and paste your cloud backend API URL.
-
----
-
-## 📜 Citation & Credits
-
-Original research project: [Optimal Detection of Diabetic Retinopathy Severity Using Attention-Based CNN and Vision Transformers](https://github.com/ChaitanyaK77/Optimal-Detection-of-Diabetic-Retinopathy-Severity-Using-Attention-Based-CNN-and-Vision-Transformers).
-
-## 🧪 Testing & Verification
-
-### Reference Images (Test Samples)
-The project ships with **5 generated reference fundus images** representing each ICDR severity stage:
-
-| File | Stage | Description |
-|------|-------|-------------|
-| `backend/app/samples/stage_0_no_dr.jpg` | 0 | Clean retina, no lesions |
-| `backend/app/samples/stage_1_mild_dr.jpg` | 1 | Isolated microaneurysms (tiny dark dots) |
-| `backend/app/samples/stage_2_moderate_dr.jpg` | 2 | Hard exudates (yellow spots) + blot hemorrhages |
-| `backend/app/samples/stage_3_severe_dr.jpg` | 3 | Dense 4-quadrant hemorrhages + cotton-wool spots |
-| `backend/app/samples/stage_4_proliferative_dr.jpg` | 4 | Neovascularization fronds + vitreous hemorrhage |
-
-**To test**: Click any sample card in the gallery at the top of the dashboard — the app will send it to the backend for analysis and display severity classification, confidence scores, Grad-CAM heatmap, and clinical guidelines.
-
-### Health Check Endpoint
+### Docker (full stack)
 ```bash
-curl http://localhost:8000/api/health
+docker compose up --build
+# Frontend  http://localhost:3000
+# API docs  http://localhost:8000/docs
 ```
-Expected response:
-```json
-{
-    "status": "healthy",
-    "service": "Diabetic Retinopathy Classification API",
-    "version": "2.0.0",
-    "device": "cpu",
-    "available_models": ["se_resnet18", "vit_dr", "hybrid_vit_cnn"],
-    "active_model": "hybrid_vit_cnn"
-}
-```
-
-### API Documentation
-Open `http://localhost:8000/docs` in your browser to access the interactive Swagger UI where you can test all endpoints directly.
-
-### Frontend Tests
-1. Open `http://localhost:3000` — confirm the page loads with 5 sample fundus cards
-2. Click **Stage 0** sample — should show "No Diabetic Retinopathy" with high confidence
-3. Click **Stage 4** sample — should show "Proliferative DR" with laser warning badge
-4. Drag and drop any JPEG/PNG — should display the image and enable analysis
-5. Switch tabs to **Batch Screening** — upload multiple images
-6. Toggle **Dark/Light mode** — should persist across refresh
-7. Open **Settings** and test a custom API URL connection
 
 ---
 
-## 📊 Clinical Reference Materials
+## ☁️ Deploying
 
-### ICDR Severity Scale (International Clinical Diabetic Retinopathy Scale)
+- **Backend → Render** (Web Service, Docker, root dir `backend`, health check `/api/health`).
+- **Frontend → Vercel** (static site, root dir `frontend`).
+- Open the app, click **⚙ API settings**, and set the backend base URL to your
+  Render service. See [`DEPLOY.md`](DEPLOY.md) for the full walkthrough.
 
-| Stage | Name | Key Findings | Recommended Action |
-|-------|------|-------------|-------------------|
-| 0 | No DR | Normal fundus, no microaneurysms | Annual routine screening |
-| 1 | Mild NPDR | Microaneurysms only | 6–12 month review, optimize HbA1c |
-| 2 | Moderate NPDR | Hard exudates, cotton-wool spots, hemorrhages | OCT, ophthalmology referral in 3-6 months |
-| 3 | Severe NPDR | 4-2-1 rule: 4-quadrant hemorrhages, venous beading, IRMA | Urgent specialist referral 2-4 weeks |
-| 4 | Proliferative DR | NVD/NVE, vitreous hemorrhage, fibrovascular proliferation | PRP laser / anti-VEGF within 24-48 hours |
-
-### Reference Literature
-1. Wilkinson, C.P., et al. (2003). "Proposed international clinical diabetic retinopathy and diabetic macular edema disease severity scales." *Ophthalmology*, 110(9), 1677-1682.
-2. Graham, B. (2015). "Kaggle Diabetic Retinopathy Detection — Ben Graham's Preprocessing." *Kaggle Competition*.
-3. Hu, J., Shen, L., & Sun, G. (2018). "Squeeze-and-Excitation Networks." *CVPR 2018*.
-4. Dosovitskiy, A., et al. (2021). "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale." *ICLR 2021*.
-5. Selvaraju, R.R., et al. (2017). "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization." *ICCV 2017*.
+CORS is open (`allow_origins=["*"]`) so the browser can call your Render backend
+directly from the Vercel frontend.
 
 ---
 
-## 🔧 Troubleshooting
+## 📚 References
 
-### Backend won't start
-- Ensure Python 3.10+ is installed
-- Run `pip install --upgrade pip` then `pip install -r requirements.txt`
-- If PyTorch fails, install separately: `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu`
+1. Wilkinson et al., *Proposed International Clinical Diabetic Retinopathy
+   and Diabetic Macular Edema Disease Severity Scales* (ICDR), Ophthalmology, 2003.
+2. Graham, B., *APTOS 2019 Blindness Detection* — Kaggle competition (dataset).
+3. Hu et al., *Squeeze-and-Excitation Networks*, CVPR 2018 (SE blocks).
+4. Dosovitskiy et al., *An Image is Worth 16×16 Words: ViT*, ICLR 2021.
+5. Selvaraju et al., *Grad-CAM: Visual Explanations from Deep Networks*, ICCV 2017.
+6. He et al., *Deep Residual Learning (ResNet)*, CVPR 2016.
 
-### Frontend can't connect to backend
-- Check the API URL in Settings modal (default: `http://localhost:8000`)
-- If using Docker, the API URL should be `http://localhost:8000`
-- Ensure CORS is configured correctly in `backend/app/main.py`
-
-### Docker build is slow
-- First build downloads PyTorch (~200MB). Subsequent builds use Docker layer cache.
-- Use `--build` flag only on first build or after dependency changes.
-
-### Images look wrong
-- Ensure sample images are generated: `python backend/app/samples/generate_samples.py`
-- Check that `frontend/samples/` contains 5 `.jpg` files
+### Original research base
+Adapted from: [Optimal Detection of Diabetic Retinopathy Severity Using
+Attention-Based CNN and Vision Transformers](https://github.com/ChaitanyaK77/Optimal-Detection-of-Diabetic-Retinopathy-Severity-Using-Attention-Based-CNN-and-Vision-Transformers).

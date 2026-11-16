@@ -1,677 +1,417 @@
-/**
- * DiabRetino AI — Frontend Application Controller
- * Handles image upload, API communication, Grad-CAM blending,
- * interactive sample gallery, and ophthalmic report generation.
- */
-
-// Application State
+/* DiabRetino AI — frontend controller */
 const state = {
-    apiBaseUrl: localStorage.getItem('diabretino_api_url') || 'http://localhost:8000',
-    currentFile: null,
-    currentSampleFilename: null,
-    currentResult: null,
-    activeVisTab: 'overlay',
-    currentTheme: localStorage.getItem('diabretino_theme') || 'dark',
-    samples: []
+    api: localStorage.getItem('diabretino_api') || '',
+    file: null,
+    sample: null,
+    result: null,
+    theme: localStorage.getItem('diabretino_theme') || 'dark',
 };
 
-// Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
-    initTheme();
-    setupDropZone();
-    setupClipboardPaste();
-    checkApiHealth();
-    loadSampleGallery();
+    applyTheme();
+    // Local dev / Docker: default to the local backend so it just works.
+    // Deployed (Vercel/Netlify): leave empty and let the user set the Render URL.
+    if (!state.api && location.hostname === 'localhost') {
+        state.api = 'http://localhost:8000';
+    }
+    setupDropzone();
+    setupClipboard();
+    setupTabs();
+    setupBatch();
+    checkHealth();
+    loadSamples();
+    loadMetrics();
 });
 
-/* ==========================================================================
-   Theme Management
-   ========================================================================== */
-function initTheme() {
-    document.documentElement.setAttribute('data-theme', state.currentTheme);
+/* ---------- theme ---------- */
+function applyTheme() {
+    document.documentElement.setAttribute('data-theme', state.theme);
 }
-
 function toggleTheme() {
-    state.currentTheme = state.currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', state.currentTheme);
-    localStorage.setItem('diabretino_theme', state.currentTheme);
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('diabretino_theme', state.theme);
+    applyTheme();
 }
 
-/* ==========================================================================
-   API Communication & Health
-   ========================================================================== */
-async function checkApiHealth() {
-    const badge = document.getElementById('apiStatusBadge');
-    const text = document.getElementById('apiStatusText');
-    const dot = badge ? badge.querySelector('.status-dot') : null;
-
+/* ---------- settings ---------- */
+function openSettings() {
+    const m = document.getElementById('settingsModal');
+    document.getElementById('apiUrl').value = state.api;
+    m.hidden = false;
+}
+function closeSettings() { document.getElementById('settingsModal').hidden = true; }
+function saveApi() {
+    state.api = document.getElementById('apiUrl').value.trim().replace(/\/$/, '');
+    localStorage.setItem('diabretino_api', state.api);
+    closeSettings();
+    checkHealth();
+    loadSamples();
+    toast('API URL saved');
+}
+async function testApi() {
+    const url = (document.getElementById('apiUrl').value.trim().replace(/\/$/, ''));
+    const msg = document.getElementById('apiTestMsg');
+    msg.textContent = 'Testing…';
     try {
-        const response = await fetch(`${state.apiBaseUrl}/api/health`, { method: 'GET' });
-        if (response.ok) {
-            const data = await response.json();
-            if (text) text.textContent = `Online (${data.device.toUpperCase()})`;
-            if (dot) {
-                dot.className = 'status-dot pulse-green';
-            }
-            return true;
-        } else {
-            throw new Error('API returned non-200');
-        }
-    } catch (err) {
-        if (text) text.textContent = 'Backend Offline';
-        if (dot) {
-            dot.className = 'status-dot pulse-red';
-        }
-        return false;
+        const r = await fetch(url + '/api/health');
+        msg.textContent = r.ok ? '✓ Connected' : '✕ ' + r.status;
+        msg.style.color = r.ok ? '#10b981' : '#ef4444';
+    } catch { msg.textContent = '✕ Unreachable'; msg.style.color = '#ef4444'; }
+}
+
+/* ---------- health ---------- */
+async function checkHealth() {
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (!state.api) {
+        dot.className = 'status-dot err';
+        txt.textContent = 'No API set — click ⚙';
+        return;
+    }
+    try {
+        const r = await fetch(state.api + '/api/health');
+        const d = await r.json();
+        if (r.ok) {
+            dot.className = 'status-dot ok';
+            txt.textContent = `Online · ${String(d.device).toUpperCase()}`;
+        } else throw 0;
+    } catch {
+        dot.className = 'status-dot err';
+        txt.textContent = 'Backend offline';
     }
 }
 
-/* ==========================================================================
-   1-Click Sample Gallery
-   ========================================================================== */
-async function loadSampleGallery() {
-    const container = document.getElementById('samplesContainer');
-    if (!container) return;
-
-    try {
-        const res = await fetch(`${state.apiBaseUrl}/api/samples`);
-        if (res.ok) {
-            const data = await res.json();
-            state.samples = data.samples;
-            renderSamples(state.samples);
-            return;
-        }
-    } catch (e) {
-        console.warn('Could not load samples from API, falling back to local paths:', e);
+/* ---------- samples ---------- */
+async function loadSamples() {
+    const grid = document.getElementById('sampleGrid');
+    let samples = [];
+    if (state.api) {
+        try {
+            const r = await fetch(state.api + '/api/samples');
+            samples = (await r.json()).samples || [];
+        } catch (e) { console.warn('samples fetch failed', e); }
     }
-
-    // Local fallback sample list
-    const fallbackSamples = [
-        { filename: 'stage_0_no_dr.jpg', stage_id: 0, label: 'Stage 0 - Normal Retina', color: '#10b981' },
-        { filename: 'stage_1_mild_dr.jpg', stage_id: 1, label: 'Stage 1 - Mild NPDR', color: '#eab308' },
-        { filename: 'stage_2_moderate_dr.jpg', stage_id: 2, label: 'Stage 2 - Moderate NPDR', color: '#f97316' },
-        { filename: 'stage_3_severe_dr.jpg', stage_id: 3, label: 'Stage 3 - Severe NPDR', color: '#ef4444' },
-        { filename: 'stage_4_proliferative_dr.jpg', stage_id: 4, label: 'Stage 4 - Proliferative DR', color: '#a855f7' }
-    ];
-    renderFallbackSamples(fallbackSamples);
-}
-
-function renderSamples(samples) {
-    const container = document.getElementById('samplesContainer');
-    container.innerHTML = '';
-
-    samples.forEach(sample => {
+    if (!samples.length) {
+        // local fallback (samples shipped in frontend/samples)
+        samples = [
+            { filename: 'stage_0_no_dr.png', stage_id: 0, label: 'Normal', color: 'var(--s0)', metadata: { name: 'No Diabetic Retinopathy', stage: 'Stage 0', badge_color: '#10b981', badge_bg: 'rgba(16,185,129,.15)' } },
+            { filename: 'stage_1_mild.png', stage_id: 1, label: 'Mild', color: 'var(--s1)', metadata: { name: 'Mild NPDR', stage: 'Stage 1', badge_color: '#eab308', badge_bg: 'rgba(234,179,8,.15)' } },
+            { filename: 'stage_2_moderate.png', stage_id: 2, label: 'Moderate', color: 'var(--s2)', metadata: { name: 'Moderate NPDR', stage: 'Stage 2', badge_color: '#f97316', badge_bg: 'rgba(249,115,22,.15)' } },
+            { filename: 'stage_3_severe.png', stage_id: 3, label: 'Severe', color: 'var(--s3)', metadata: { name: 'Severe NPDR', stage: 'Stage 3', badge_color: '#ef4444', badge_bg: 'rgba(239,68,68,.15)' } },
+            { filename: 'stage_4_proliferative.png', stage_id: 4, label: 'Proliferative', color: 'var(--s4)', metadata: { name: 'Proliferative DR', stage: 'Stage 4', badge_color: '#a855f7', badge_bg: 'rgba(168,85,247,.15)' } },
+        ];
+    }
+    grid.innerHTML = '';
+    samples.forEach(s => {
         const card = document.createElement('div');
         card.className = 'sample-card';
-        card.style.setProperty('--card-accent', sample.metadata.badge_color);
-        card.onclick = () => selectSample(sample);
-
+        card.style.setProperty('--card-accent', s.metadata.badge_color);
+        const imgSrc = s.thumbnail_base64
+            ? s.thumbnail_base64
+            : `samples/${s.filename}`;
         card.innerHTML = `
-            <img class="sample-thumb" src="${sample.thumbnail_base64}" alt="${sample.label}">
-            <div class="sample-stage-name">${sample.metadata.stage}</div>
-            <div class="sample-stage-tier">${sample.metadata.name.replace('Diabetic Retinopathy', 'DR')}</div>
-        `;
-        container.appendChild(card);
+            <img src="${imgSrc}" alt="${s.label}">
+            <div class="s-name">${s.metadata.stage}</div>
+            <div class="s-stage">${s.label}</div>`;
+        card.onclick = () => pickSample(s);
+        grid.appendChild(card);
     });
 }
 
-function renderFallbackSamples(samples) {
-    const container = document.getElementById('samplesContainer');
-    container.innerHTML = '';
-
-    samples.forEach(sample => {
-        const card = document.createElement('div');
-        card.className = 'sample-card';
-        card.style.setProperty('--card-accent', sample.color);
-        card.onclick = () => selectFallbackSample(sample);
-
-        card.innerHTML = `
-            <img class="sample-thumb" src="samples/${sample.filename}" alt="${sample.label}">
-            <div class="sample-stage-name">Stage ${sample.stage_id}</div>
-            <div class="sample-stage-tier">${sample.label.split(' - ')[1]}</div>
-        `;
-        container.appendChild(card);
-    });
-}
-
-function selectSample(sample) {
-    state.currentFile = null;
-    state.currentSampleFilename = sample.filename;
-
-    // Show preview in drop zone
-    const previewWrapper = document.getElementById('previewWrapper');
-    const previewImg = document.getElementById('previewImg');
-    const dropPrompt = document.getElementById('dropPrompt');
-
-    previewImg.src = sample.thumbnail_base64;
-    previewWrapper.style.display = 'flex';
-    dropPrompt.style.display = 'none';
-
-    showToast(`Loaded ${sample.metadata.stage}: ${sample.metadata.name}`);
+function pickSample(s) {
+    state.file = null;
+    state.sample = s;
+    showPreview(s.thumbnail_base64 || `samples/${s.filename}`);
+    toast(`Loaded ${s.metadata.stage}: ${s.metadata.name}`);
     runAnalysis();
 }
 
-function selectFallbackSample(sample) {
-    state.currentFile = null;
-    state.currentSampleFilename = sample.filename;
-
-    const previewWrapper = document.getElementById('previewWrapper');
-    const previewImg = document.getElementById('previewImg');
-    const dropPrompt = document.getElementById('dropPrompt');
-
-    previewImg.src = `samples/${sample.filename}`;
-    previewWrapper.style.display = 'flex';
-    dropPrompt.style.display = 'none';
-
-    showToast(`Loaded Stage ${sample.stage_id} sample`);
-    runAnalysis();
+/* ---------- dropzone ---------- */
+function setupDropzone() {
+    const dz = document.getElementById('dropzone');
+    const input = document.getElementById('fileInput');
+    document.getElementById('browseLink').onclick = (e) => { e.preventDefault(); input.click(); };
+    dz.onclick = () => input.click();
+    input.onchange = (e) => e.target.files[0] && handleFile(e.target.files[0]);
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', e => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
+    document.getElementById('clearImg').onclick = clearImage;
 }
-
-/* ==========================================================================
-   Drag & Drop and Image Upload
-   ========================================================================== */
-function setupDropZone() {
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-
-    if (!dropZone || !fileInput) return;
-
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropZone.classList.add('drag-active');
-        }, false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropZone.classList.remove('drag-active');
-        }, false);
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        if (files && files.length > 0) {
-            handleSelectedFile(files[0]);
-        }
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-            handleSelectedFile(e.target.files[0]);
-        }
-    });
-}
-
-function setupClipboardPaste() {
-    window.addEventListener('paste', (e) => {
-        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-        for (let item of items) {
-            if (item.type.indexOf('image') !== -1) {
-                const blob = item.getAsFile();
-                handleSelectedFile(blob);
-                showToast('Pasted retinal image from clipboard');
+function setupClipboard() {
+    window.addEventListener('paste', e => {
+        for (const it of (e.clipboardData.items || [])) {
+            if (it.type.startsWith('image')) {
+                handleFile(it.getAsFile());
+                toast('Pasted image from clipboard');
                 break;
             }
         }
     });
 }
-
-function handleSelectedFile(file) {
-    if (!file.type.startsWith('image/')) {
-        showToast('Please upload a valid image file (JPEG or PNG)', 'error');
-        return;
-    }
-
-    state.currentFile = file;
-    state.currentSampleFilename = null;
-
+function handleFile(file) {
+    if (!file.type.startsWith('image/')) { toast('Please choose an image file', true); return; }
+    state.file = file;
+    state.sample = null;
     const reader = new FileReader();
-    reader.onload = (e) => {
-        const previewWrapper = document.getElementById('previewWrapper');
-        const previewImg = document.getElementById('previewImg');
-        const dropPrompt = document.getElementById('dropPrompt');
-
-        previewImg.src = e.target.result;
-        previewWrapper.style.display = 'flex';
-        dropPrompt.style.display = 'none';
-    };
+    reader.onload = e => showPreview(e.target.result);
     reader.readAsDataURL(file);
 }
-
-function clearSelectedImage(event) {
-    if (event) event.stopPropagation();
-    state.currentFile = null;
-    state.currentSampleFilename = null;
-
+function showPreview(src) {
+    document.getElementById('previewImg').src = src;
+    document.getElementById('dzPrompt').hidden = true;
+    const p = document.getElementById('dzPreview'); p.hidden = false; p.style.display = 'flex';
+}
+function clearImage() {
+    state.file = null; state.sample = null;
     document.getElementById('fileInput').value = '';
-    document.getElementById('previewWrapper').style.display = 'none';
-    document.getElementById('dropPrompt').style.display = 'block';
-    document.getElementById('previewImg').src = '';
+    document.getElementById('dzPreview').hidden = true;
+    document.getElementById('dzPrompt').hidden = false;
 }
 
-/* ==========================================================================
-   Diagnostic Inference Execution
-   ========================================================================== */
+/* ---------- tabs ---------- */
+function setupTabs() {
+    document.querySelectorAll('.vtab').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.vtab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const view = btn.dataset.view;
+            ['Overlay', 'Compare', 'Heatmap'].forEach(v =>
+                document.getElementById('view' + v).hidden = (v.toLowerCase() !== view));
+        };
+    });
+    const op = document.getElementById('opacity');
+    op.oninput = () => {
+        document.getElementById('ovHeat').style.opacity = op.value / 100;
+        document.getElementById('opacityVal').textContent = op.value + '%';
+    };
+}
+
+/* ---------- run analysis ---------- */
+document.getElementById('runBtn').onclick = runAnalysis;
 async function runAnalysis() {
-    if (!state.currentFile && !state.currentSampleFilename) {
-        showToast('Please upload a retinal image or pick a sample first.', 'error');
-        return;
-    }
+    if (!state.file && !state.sample) { toast('Upload an image or pick a sample', true); return; }
+    if (!state.api) { openSettings(); toast('Set your backend API URL first', true); return; }
 
-    const btn = document.getElementById('analyzeBtn');
-    const btnText = btn.querySelector('.btn-text');
-    const spinner = btn.querySelector('.spinner');
-
+    const btn = document.getElementById('runBtn');
     btn.disabled = true;
-    btnText.style.display = 'none';
-    spinner.style.display = 'inline-block';
+    btn.querySelector('.btn-label').style.display = 'none';
+    document.getElementById('runSpinner').hidden = false;
 
-    const modelName = document.getElementById('modelSelect').value;
-    const applyEnhancement = document.getElementById('preprocessToggle').checked;
-
-    const formData = new FormData();
-    formData.append('model_name', modelName);
-    formData.append('apply_enhancement', applyEnhancement);
-
-    if (state.currentFile) {
-        formData.append('file', state.currentFile);
-    } else if (state.currentSampleFilename) {
-        formData.append('sample_filename', state.currentSampleFilename);
-    }
+    const fd = new FormData();
+    fd.append('model_name', document.getElementById('modelSelect').value);
+    fd.append('apply_enhancement', document.getElementById('enhanceToggle').checked);
+    if (state.file) fd.append('file', state.file);
+    else fd.append('sample_filename', state.sample.filename);
 
     try {
-        const response = await fetch(`${state.apiBaseUrl}/api/predict`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.detail || 'Inference server error');
-        }
-
-        const data = await response.json();
-        state.currentResult = data;
-        displayResults(data);
-        showToast('Analysis completed successfully');
+        const r = await fetch(state.api + '/api/predict', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error((await r.json()).detail || 'Error ' + r.status);
+        state.result = await r.json();
+        render(state.result);
+        toast('Analysis complete');
     } catch (err) {
-        console.error(err);
-        showToast(`Analysis failed: ${err.message}`, 'error');
+        toast('Failed: ' + err.message, true);
     } finally {
         btn.disabled = false;
-        btnText.style.display = 'flex';
-        spinner.style.display = 'none';
+        btn.querySelector('.btn-label').style.display = '';
+        document.getElementById('runSpinner').hidden = true;
     }
 }
 
-/* ==========================================================================
-   Results Rendering & Visualizer Display
-   ========================================================================== */
-function displayResults(data) {
-    const idleState = document.getElementById('idleState');
-    const resultsContainer = document.getElementById('resultsContainer');
+/* ---------- render results ---------- */
+function render(d) {
+    document.getElementById('idleState').hidden = true;
+    const res = document.getElementById('results'); res.hidden = false;
 
-    idleState.style.display = 'none';
-    resultsContainer.style.display = 'block';
+    const p = d.prediction, g = d.clinical_guidelines, v = d.visualizations;
+    const stage = document.getElementById('stagePill');
+    stage.textContent = p.stage;
+    stage.style.background = p.badge_bg; stage.style.color = p.badge_color; stage.style.border = `1px solid ${p.badge_color}`;
+    document.getElementById('urgencyPill').textContent = p.urgency;
+    document.getElementById('diagTitle').textContent = p.class_name;
+    document.getElementById('confValue').textContent = p.confidence_percentage + '%';
+    document.getElementById('latencyTag').textContent = `${d.model_info.latency_ms}ms · ${d.model_info.architecture_display}`;
 
-    const pred = data.prediction;
-    const guidelines = data.clinical_guidelines;
-    const vis = data.visualizations;
+    // visualizers
+    document.getElementById('ovBase').src = v.original_image;
+    document.getElementById('ovHeat').src = v.heatmap;
+    document.getElementById('cmpOrig').src = v.original_image;
+    document.getElementById('cmpEnh').src = v.preprocessed_image;
+    document.getElementById('cmpHeat').src = v.overlay || v.heatmap;
+    document.getElementById('heatStandalone').src = v.heatmap;
 
-    // Header & Badges
-    const stagePill = document.getElementById('stagePill');
-    stagePill.textContent = pred.stage;
-    stagePill.style.backgroundColor = pred.badge_bg;
-    stagePill.style.color = pred.badge_color;
-    stagePill.style.border = `1px solid ${pred.badge_color}`;
-
-    const urgencyPill = document.getElementById('urgencyPill');
-    urgencyPill.textContent = pred.urgency;
-
-    document.getElementById('diagnosisTitle').textContent = pred.class_name;
-    document.getElementById('confidenceValue').textContent = `${pred.confidence_percentage}%`;
-    document.getElementById('latencyTag').textContent = `${data.model_info.latency_ms} ms • ${data.model_info.architecture_display}`;
-
-    // Visualizers Setup
-    document.getElementById('visBaseImg').src = vis.original_image;
-    document.getElementById('visHeatmapImg').src = vis.heatmap;
-    document.getElementById('compOriginalImg').src = vis.original_image;
-    document.getElementById('compPreprocessedImg').src = vis.preprocessed_image;
-    document.getElementById('compHeatmapImg').src = vis.overlay || vis.heatmap;
-    document.getElementById('visStandaloneHeatmap').src = vis.heatmap;
-
-    // Probability Bars
-    renderProbabilityBars(data.probabilities_breakdown);
-
-    // Clinical Guidelines
-    document.getElementById('icdrCriteriaText').textContent = guidelines.icdr_criteria;
-    const findingsList = document.getElementById('findingsList');
-    findingsList.innerHTML = '';
-    guidelines.clinical_findings.forEach(f => {
-        const li = document.createElement('li');
-        li.textContent = f;
-        findingsList.appendChild(li);
+    // probabilities
+    const bars = document.getElementById('probBars');
+    bars.innerHTML = '';
+    d.probabilities_breakdown.forEach(item => {
+        const el = document.createElement('div');
+        el.className = 'prob-item';
+        el.innerHTML = `
+            <div class="prob-meta"><span>${item.name}</span><span style="color:${item.color}">${item.percentage}%</span></div>
+            <div class="prob-track"><div class="prob-fill" style="width:0;background:${item.color}"></div></div>`;
+        bars.appendChild(el);
+        setTimeout(() => { const f = el.querySelector('.prob-fill'); if (f) f.style.width = item.percentage + '%'; }, 60);
     });
 
-    document.getElementById('actionText').textContent = guidelines.recommended_action;
+    // report
+    document.getElementById('icdrText').textContent = g.icdr_criteria;
+    const fl = document.getElementById('findingsList'); fl.innerHTML = '';
+    g.clinical_findings.forEach(f => { const li = document.createElement('li'); li.textContent = f; fl.appendChild(li); });
+    document.getElementById('actionText').textContent = g.recommended_action;
+    document.getElementById('laserWarn').hidden = !p.laser_required;
 
-    const laserWarning = document.getElementById('laserWarning');
-    if (pred.laser_required) {
-        laserWarning.style.display = 'block';
-    } else {
-        laserWarning.style.display = 'none';
-    }
+    // print + save
+    document.getElementById('printBtn').onclick = () => window.print();
+    document.getElementById('saveHeatBtn').onclick = saveHeat;
+}
+function saveHeat() {
+    if (!state.result) return;
+    const a = document.createElement('a');
+    a.download = `diabretino_attention_${Date.now()}.png`;
+    a.href = state.result.visualizations.heatmap;
+    a.click();
 }
 
-function renderProbabilityBars(breakdown) {
-    const list = document.getElementById('probBarsList');
-    list.innerHTML = '';
-
-    breakdown.forEach(item => {
-        const barItem = document.createElement('div');
-        barItem.className = 'prob-bar-item';
-        barItem.innerHTML = `
-            <div class="prob-bar-meta">
-                <span>${item.name} (${item.key})</span>
-                <span style="color: ${item.color}">${item.percentage}%</span>
-            </div>
-            <div class="prob-bar-track">
-                <div class="prob-bar-fill" style="width: 0%; background-color: ${item.color}"></div>
-            </div>
-        `;
-        list.appendChild(barItem);
-
-        // Animate bar fill
-        setTimeout(() => {
-            const fill = barItem.querySelector('.prob-bar-fill');
-            if (fill) fill.style.width = `${item.percentage}%`;
-        }, 50);
-    });
-}
-
-/* ==========================================================================
-   Visualizer Controls (Opacity & Tabs)
-   ========================================================================== */
-function adjustHeatmapOpacity(val) {
-    const heatLayer = document.getElementById('visHeatmapImg');
-    const opacityText = document.getElementById('opacityValueText');
-    if (heatLayer) heatLayer.style.opacity = val / 100;
-    if (opacityText) opacityText.textContent = `${val}%`;
-}
-
-function switchVisTab(mode) {
-    state.activeVisTab = mode;
-    const tabs = document.querySelectorAll('.vis-tab');
-    tabs.forEach(t => t.classList.remove('active'));
-
-    const overlayView = document.getElementById('visOverlayView');
-    const splitView = document.getElementById('visSplitView');
-    const heatmapView = document.getElementById('visHeatmapView');
-
-    overlayView.style.display = 'none';
-    splitView.style.display = 'none';
-    heatmapView.style.display = 'none';
-
-    if (mode === 'overlay') {
-        overlayView.style.display = 'block';
-        tabs[0].classList.add('active');
-    } else if (mode === 'split') {
-        splitView.style.display = 'block';
-        tabs[1].classList.add('active');
-    } else if (mode === 'heatmap') {
-        heatmapView.style.display = 'block';
-        tabs[2].classList.add('active');
-    }
-}
-
-function downloadVisualization() {
-    if (!state.currentResult) return;
-    const link = document.createElement('a');
-    link.download = `diabretino_overlay_${Date.now()}.jpg`;
-    link.href = state.currentResult.visualizations.overlay || state.currentResult.visualizations.heatmap;
-    link.click();
-}
-
-/* ==========================================================================
-   Main View Navigation (Single vs Batch)
-   ========================================================================== */
-function switchMainTab(tab) {
-    const tabSingle = document.getElementById('tabSingleView');
-    const tabBatch = document.getElementById('tabBatchView');
-    const singleSection = document.getElementById('singleScanSection');
-    const batchSection = document.getElementById('batchScreeningSection');
-
-    if (tab === 'single') {
-        tabSingle.classList.add('active');
-        tabBatch.classList.remove('active');
-        singleSection.style.display = 'block';
-        batchSection.style.display = 'none';
-    } else {
-        tabSingle.classList.remove('active');
-        tabBatch.classList.add('active');
-        singleSection.style.display = 'none';
-        batchSection.style.display = 'block';
-        initBatchFileInput();
-    }
-}
-
-/* ==========================================================================
-   Batch Screening Mode
-   ========================================================================== */
-function initBatchFileInput() {
-    const input = document.getElementById('batchFileInput');
-    if (!input || input.dataset.initialized) return;
-
-    input.dataset.initialized = 'true';
-    input.addEventListener('change', async (e) => {
-        const files = Array.from(e.target.files);
-        if (!files || files.length === 0) return;
-
-        showToast(`Processing batch of ${files.length} retinal scans...`);
-        const formData = new FormData();
-        files.forEach(f => formData.append('files', f));
-        formData.append('model_name', document.getElementById('modelSelect').value);
-
+/* ---------- batch ---------- */
+function setupBatch() {
+    document.getElementById('batchBrowse').onclick = () => document.getElementById('batchInput').click();
+    document.getElementById('batchInput').onchange = async e => {
+        const files = [...e.target.files];
+        if (!files.length || !state.api) { if (!state.api) openSettings(); return; }
+        toast(`Screening ${files.length} images…`);
+        const fd = new FormData();
+        files.forEach(f => fd.append('files', f));
+        fd.append('model_name', document.getElementById('modelSelect').value);
         try {
-            const res = await fetch(`${state.apiBaseUrl}/api/batch-predict`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!res.ok) throw new Error('Batch processing failed');
-            const data = await res.json();
-            renderBatchResults(data);
-            showToast('Batch screening completed');
-        } catch (err) {
-            showToast(`Batch error: ${err.message}`, 'error');
-        }
-    });
+            const r = await fetch(state.api + '/api/batch-predict', { method: 'POST', body: fd });
+            if (!r.ok) throw new Error('Batch failed');
+            renderBatch(await r.json());
+        } catch (err) { toast('Batch error: ' + err.message, true); }
+    };
 }
+function renderBatch(d) {
+    const sum = document.getElementById('batchSummary');
+    sum.hidden = false; sum.innerHTML = '';
+    const colors = ['var(--s0)', 'var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'];
+    const keys = ['No_DR', 'Mild', 'Moderate', 'Severe', 'Proliferate_DR'];
+    keys.forEach((k, i) => {
+        const n = d.stage_distribution[k] || 0;
+        sum.innerHTML += `<div class="sum-pill" style="border-left-color:${colors[i]}"><div class="sum-count">${n}</div><div class="sum-label">${k.replace('_DR','')}</div></div>`;
+    });
 
-function renderBatchResults(data) {
-    const summaryGrid = document.getElementById('batchSummaryGrid');
-    summaryGrid.style.display = 'grid';
-
-    document.getElementById('countStage0').textContent = data.stage_distribution['No_DR'] || 0;
-    document.getElementById('countStage1').textContent = data.stage_distribution['Mild'] || 0;
-    document.getElementById('countStage2').textContent = data.stage_distribution['Moderate'] || 0;
-    document.getElementById('countStage3').textContent = data.stage_distribution['Severe'] || 0;
-    document.getElementById('countStage4').textContent = data.stage_distribution['Proliferate_DR'] || 0;
-
-    const tbody = document.getElementById('batchTableBody');
-    tbody.innerHTML = '';
-
-    data.results.forEach(item => {
+    const wrap = document.getElementById('batchTableWrap'); wrap.hidden = false;
+    const body = document.getElementById('batchBody'); body.innerHTML = '';
+    d.results.forEach(item => {
         const tr = document.createElement('tr');
         if (item.error) {
-            tr.innerHTML = `
-                <td>-</td>
-                <td><strong>${item.filename}</strong></td>
-                <td colspan="4" class="text-danger">${item.error}</td>
-            `;
+            tr.innerHTML = `<td>—</td><td><strong>${item.filename}</strong></td><td colspan="3" style="color:#f87171">${item.error}</td>`;
         } else {
             const p = item.prediction;
             tr.innerHTML = `
-                <td><img class="batch-thumb" src="${item.thumbnail}" alt="Thumb"></td>
-                <td><strong>${item.filename}</strong></td>
-                <td><span style="color: ${p.badge_color}; font-weight:700;">${p.stage}</span>: ${p.class_name}</td>
-                <td><span class="badge" style="background:${p.badge_bg}; color:${p.badge_color}">${p.risk_level}</span></td>
+                <td><img src="${item.thumbnail}" alt=""></td>
+                <td>${item.filename}</td>
+                <td><span style="color:${p.badge_color};font-weight:700">${p.stage}</span> ${p.class_name.replace(' Diabetic Retinopathy','').replace(' Non-Proliferative',' NPDR').replace('Proliferative Diabetic','Proliferative')}</td>
                 <td><strong>${p.confidence_percentage}%</strong></td>
-                <td>${p.urgency}</td>
-            `;
+                <td class="small">${p.urgency}</td>`;
         }
-        tbody.appendChild(tr);
+        body.appendChild(tr);
     });
 }
 
-/* ==========================================================================
-   Medical Report Generator Modal
-   ========================================================================== */
-function openReportModal() {
-    if (!state.currentResult) return;
-    const modal = document.getElementById('reportModal');
-    const body = document.getElementById('reportModalBody');
-    const pred = state.currentResult.prediction;
-    const guidelines = state.currentResult.clinical_guidelines;
-    const vis = state.currentResult.visualizations;
-
-    const reportHtml = `
-        <div style="font-family: inherit; color: var(--text-primary); line-height: 1.6;">
-            <div style="display:flex; justify-content:space-between; border-bottom: 2px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1.2rem;">
-                <div>
-                    <h2 style="font-size: 1.3rem; font-weight: 800;">OPHTHALMIC EXAMINATION REPORT</h2>
-                    <p style="font-size: 0.8rem; color: var(--text-secondary);">Diabetic Retinopathy Automated Screening & Severity Grading</p>
-                </div>
-                <div style="text-align: right; font-size: 0.8rem; color: var(--text-muted);">
-                    <div><strong>Exam ID:</strong> DR-${Math.floor(100000 + Math.random() * 900000)}</div>
-                    <div><strong>Date:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 1.2rem; align-items: center; margin-bottom: 1.2rem; background: rgba(0,0,0,0.15); padding: 0.8rem; border-radius: 8px;">
-                <img src="${vis.overlay || vis.original_image}" style="width: 130px; height: 130px; border-radius: 8px; object-fit: cover;" alt="Retinal Scan">
-                <div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Primary AI Finding</div>
-                    <div style="font-size: 1.4rem; font-weight: 800; color: ${pred.badge_color};">${pred.stage}: ${pred.class_name}</div>
-                    <div style="font-size: 0.85rem; margin-top: 0.3rem;">
-                        <strong>Confidence:</strong> ${pred.confidence_percentage}% &bull; 
-                        <strong>Risk Tier:</strong> ${pred.risk_level} &bull; 
-                        <strong>Follow-up:</strong> ${pred.urgency}
-                    </div>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.3rem;">ICDR Diagnostic Criteria</h4>
-                <p style="font-size: 0.85rem; color: var(--text-secondary);">${guidelines.icdr_criteria}</p>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.3rem;">Identified Retinal Biomarkers</h4>
-                <ul style="padding-left: 1.2rem; font-size: 0.82rem; color: var(--text-secondary);">
-                    ${guidelines.clinical_findings.map(f => `<li>${f}</li>`).join('')}
-                </ul>
-            </div>
-
-            <div style="background: rgba(255,255,255,0.03); border-left: 3px solid ${pred.badge_color}; padding: 0.8rem; border-radius: 6px; margin-bottom: 1.5rem;">
-                <h4 style="font-size: 0.85rem; font-weight: 700; margin-bottom: 0.2rem;">Doctor Action Directive</h4>
-                <p style="font-size: 0.85rem;">${guidelines.recommended_action}</p>
-            </div>
-
-            <div style="border-top: 1px dashed var(--border-color); padding-top: 1rem; display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
-                <div>Model: ${state.currentResult.model_info.architecture_display}</div>
-                <div>Reviewing Ophthalmologist Signature: _________________________</div>
-            </div>
-        </div>
-    `;
-
-    body.innerHTML = reportHtml;
-    modal.style.display = 'flex';
-}
-
-function closeReportModal() {
-    document.getElementById('reportModal').style.display = 'none';
-}
-
-/* ==========================================================================
-   API Settings Modal
-   ========================================================================== */
-function openSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    const input = document.getElementById('apiUrlInput');
-    const swaggerLink = document.getElementById('swaggerLink');
-
-    input.value = state.apiBaseUrl;
-    swaggerLink.href = `${state.apiBaseUrl}/docs`;
-    swaggerLink.textContent = `${state.apiBaseUrl}/docs`;
-
-    modal.style.display = 'flex';
-}
-
-function closeSettingsModal() {
-    document.getElementById('settingsModal').style.display = 'none';
-}
-
-async function testCustomApiConnection() {
-    const input = document.getElementById('apiUrlInput');
-    const statusText = document.getElementById('settingsTestStatus');
-    const testUrl = input.value.trim().replace(/\/$/, '');
-
-    statusText.textContent = 'Testing...';
-    statusText.style.color = '#94a3b8';
-
+/* ---------- model performance ---------- */
+async function loadMetrics() {
+    const body = document.getElementById('perfBody');
+    const loading = document.getElementById('perfLoading');
+    if (!state.api) { loading.textContent = 'Set your API URL to load model metrics.'; return; }
     try {
-        const res = await fetch(`${testUrl}/api/health`);
-        if (res.ok) {
-            statusText.textContent = '✓ Connected successfully!';
-            statusText.style.color = '#10b981';
-        } else {
-            statusText.textContent = '✕ Server returned error';
-            statusText.style.color = '#ef4444';
-        }
+        const r = await fetch(state.api + '/api/metrics');
+        if (!r.ok) throw new Error('No metrics yet');
+        const data = await r.json();
+        renderPerf(data);
+        if (loading) loading.remove();
     } catch (e) {
-        statusText.textContent = '✕ Cannot reach server';
-        statusText.style.color = '#ef4444';
+        loading.textContent = 'Training metrics not available yet (run the model training pipeline).';
     }
 }
 
-function saveSettings() {
-    const input = document.getElementById('apiUrlInput');
-    const newUrl = input.value.trim().replace(/\/$/, '');
-    state.apiBaseUrl = newUrl;
-    localStorage.setItem('diabretino_api_url', newUrl);
-    closeSettingsModal();
-    checkApiHealth();
-    loadSampleGallery();
-    showToast('Saved API configuration');
-}
+function renderPerf(data) {
+    const body = document.getElementById('perfBody');
+    const classes = data.class_names || [];
+    const wrapper = document.createElement('div');
 
-/* ==========================================================================
-   Toast Notification Helper
-   ========================================================================== */
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toastContainer');
-    if (!container) return;
+    // model cards
+    const cards = document.createElement('div');
+    cards.className = 'perf-models';
+    (data.models || []).forEach(m => {
+        const flag = m.model === 'hybrid_vit_cnn' ? ' <span class="flag">★ flagship</span>' : '';
+        const card = document.createElement('div');
+        card.className = 'perf-card';
+        card.innerHTML = `
+            <div class="perf-name">${m.model}${flag}</div>
+            <div class="perf-stat"><span class="k">Accuracy</span><span class="v">${(m.accuracy*100).toFixed(1)}%</span></div>
+            <div class="perf-stat"><span class="k">Macro F1</span><span class="v">${(m.macro_f1*100).toFixed(1)}%</span></div>
+            <div class="perf-stat"><span class="k">Weighted F1</span><span class="v">${(m.weighted_f1*100).toFixed(1)}%</span></div>
+            <div class="perf-stat"><span class="k">Samples</span><span class="v">${m.n_samples}</span></div>
+        `;
+        cards.appendChild(card);
+    });
+    wrapper.appendChild(cards);
 
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    if (type === 'error') {
-        toast.style.borderLeftColor = '#ef4444';
+    // confusion matrix for the flagship
+    const flagship = (data.models || []).find(m => m.model === 'hybrid_vit_cnn') || (data.models||[])[0];
+    if (flagship && flagship.confusion_matrix) {
+        const cmBlock = document.createElement('div');
+        cmBlock.className = 'cm-block';
+        cmBlock.innerHTML = `<h4>Confusion matrix — ${flagship.model} (rows = actual, cols = predicted)</h4>`;
+        const grid = document.createElement('div');
+        grid.className = 'cm-grid';
+        // header row
+        grid.appendChild(cell(''));
+        classes.forEach(c => grid.appendChild(cell(c.replace('_',' '), true)));
+        flagship.confusion_matrix.forEach((row, i) => {
+            grid.appendChild(cell(classes[i].replace('_',' '), true));
+            row.forEach((val, j) => {
+                const c = cell(val === 0 ? '' : val, false, i === j ? 'diag' : '');
+                grid.appendChild(c);
+            });
+        });
+        cmBlock.appendChild(grid);
+        wrapper.appendChild(cmBlock);
     }
 
-    toast.innerHTML = `
-        <span>${message}</span>
-    `;
+    // class distribution
+    if (data.class_distribution_pct) {
+        const note = document.createElement('div');
+        note.className = 'perf-note';
+        note.innerHTML = 'Class distribution (train): ' +
+            Object.entries(data.class_distribution_pct)
+                .map(([k,v]) => `${k} ${v}%`).join(' · ');
+        wrapper.appendChild(note);
+    }
 
-    container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(10px)';
-        setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    body.innerHTML = '';
+    body.appendChild(wrapper);
 }
+
+function cell(text, isHeader, cls) {
+    const el = document.createElement('div');
+    el.className = 'cm-cell' + (isHeader ? ' cm-hdr' : (cls ? ' ' + cls : ''));
+    el.textContent = text;
+    return el;
+}
+
+/* ---------- toast ---------- */
+function toast(msg, isErr) {
+    const c = document.getElementById('toasts');
+    const t = document.createElement('div');
+    t.className = 'toast' + (isErr ? ' error' : '');
+    t.textContent = msg;
+    c.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3200);
+}
+
+/* wire modal buttons */
+document.getElementById('testApiBtn').onclick = testApi;
+document.getElementById('saveApiBtn').onclick = saveApi;
+document.getElementById('settingsModal').onclick = e => { if (e.target.id === 'settingsModal') closeSettings(); };

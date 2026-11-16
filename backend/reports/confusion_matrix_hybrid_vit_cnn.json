@@ -1,0 +1,78 @@
+{
+  "matrix": [
+    [
+      1768,
+      28,
+      9,
+      0,
+      0
+    ],
+    [
+      47,
+      227,
+      81,
+      14,
+      1
+    ],
+    [
+      79,
+      156,
+      554,
+      179,
+      31
+    ],
+    [
+      7,
+      17,
+      43,
+      120,
+      6
+    ],
+    [
+      12,
+      36,
+      129,
+      99,
+      19
+    ]
+  ],
+  "classes": [
+    "No_DR",
+    "Mild",
+    "Moderate",
+    "Severe",
+    "Proliferate_DR"
+  ],
+  "precision_recall_f1": {
+    "No_DR": {
+      "precision": 0.9242,
+      "recall": 0.9795,
+      "f1": 0.951,
+      "support": 1805
+    },
+    "Mild": {
+      "precision": 0.4892,
+      "recall": 0.6135,
+      "f1": 0.5444,
+      "support": 370
+    },
+    "Moderate": {
+      "precision": 0.6789,
+      "recall": 0.5546,
+      "f1": 0.6105,
+      "support": 999
+    },
+    "Severe": {
+      "precision": 0.2913,
+      "recall": 0.6218,
+      "f1": 0.3967,
+      "support": 193
+    },
+    "Proliferate_DR": {
+      "precision": 0.3333,
+      "recall": 0.0644,
+      "f1": 0.108,
+      "support": 295
+    }
+  }
+}

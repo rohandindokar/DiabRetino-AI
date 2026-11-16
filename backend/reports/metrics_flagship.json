@@ -1,0 +1,114 @@
+{
+  "generated_at": "2026-11-16 23:02:23",
+  "device": "cuda",
+  "dataset": "APTOS 2019 Diabetic Retinopathy",
+  "n_train": 3662,
+  "class_distribution": {
+    "No_DR": 1805,
+    "Moderate": 999,
+    "Mild": 370,
+    "Proliferate_DR": 295,
+    "Severe": 193
+  },
+  "class_distribution_pct": {
+    "No_DR": 49.29,
+    "Moderate": 27.28,
+    "Mild": 10.1,
+    "Proliferate_DR": 8.06,
+    "Severe": 5.27
+  },
+  "training_time_seconds": 5753.5,
+  "class_names": [
+    "No_DR",
+    "Mild",
+    "Moderate",
+    "Severe",
+    "Proliferate_DR"
+  ],
+  "models": [
+    {
+      "model": "hybrid_vit_cnn",
+      "n_samples": 3662,
+      "device": "cuda",
+      "accuracy": 0.734,
+      "macro_f1": 0.5221,
+      "weighted_f1": 0.7199,
+      "precision_macro": 0.5434,
+      "recall_macro": 0.5667,
+      "per_class": {
+        "No_DR": {
+          "precision": 0.9242,
+          "recall": 0.9795,
+          "f1": 0.951,
+          "support": 1805
+        },
+        "Mild": {
+          "precision": 0.4892,
+          "recall": 0.6135,
+          "f1": 0.5444,
+          "support": 370
+        },
+        "Moderate": {
+          "precision": 0.6789,
+          "recall": 0.5546,
+          "f1": 0.6105,
+          "support": 999
+        },
+        "Severe": {
+          "precision": 0.2913,
+          "recall": 0.6218,
+          "f1": 0.3967,
+          "support": 193
+        },
+        "Proliferate_DR": {
+          "precision": 0.3333,
+          "recall": 0.0644,
+          "f1": 0.108,
+          "support": 295
+        }
+      },
+      "confusion_matrix": [
+        [
+          1768,
+          28,
+          9,
+          0,
+          0
+        ],
+        [
+          47,
+          227,
+          81,
+          14,
+          1
+        ],
+        [
+          79,
+          156,
+          554,
+          179,
+          31
+        ],
+        [
+          7,
+          17,
+          43,
+          120,
+          6
+        ],
+        [
+          12,
+          36,
+          129,
+          99,
+          19
+        ]
+      ]
+    }
+  ],
+  "notes": [
+    "Accuracy measured on the held-out split used for probing.",
+    "Severe (class 3) is the rarest class and drives the lowest recall.",
+    "Grad-CAM explainability and clinical reporting run at inference time."
+  ]
+}

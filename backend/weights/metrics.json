@@ -1,0 +1,83 @@
+{
+  "hybrid_vit_cnn": {
+    "model": "hybrid_vit_cnn",
+    "eval_split": "held-out validation (20%)",
+    "n_samples": 733,
+    "device": "cuda",
+    "best_val_acc_during_training": 0.7462,
+    "accuracy": 0.7462,
+    "macro_f1": 0.5372,
+    "weighted_f1": 0.7317,
+    "precision_macro": 0.5666,
+    "recall_macro": 0.5854,
+    "per_class": {
+      "No_DR": {
+        "precision": 0.9469,
+        "recall": 0.9889,
+        "f1": 0.9675,
+        "support": 361
+      },
+      "Mild": {
+        "precision": 0.5056,
+        "recall": 0.6081,
+        "f1": 0.5521,
+        "support": 74
+      },
+      "Moderate": {
+        "precision": 0.659,
+        "recall": 0.57,
+        "f1": 0.6113,
+        "support": 200
+      },
+      "Severe": {
+        "precision": 0.3214,
+        "recall": 0.6923,
+        "f1": 0.439,
+        "support": 39
+      },
+      "Proliferate_DR": {
+        "precision": 0.4,
+        "recall": 0.0678,
+        "f1": 0.1159,
+        "support": 59
+      }
+    },
+    "confusion_matrix": [
+      [
+        357,
+        2,
+        2,
+        0,
+        0
+      ],
+      [
+        7,
+        45,
+        22,
+        0,
+        0
+      ],
+      [
+        11,
+        31,
+        114,
+        38,
+        6
+      ],
+      [
+        0,
+        5,
+        7,
+        27,
+        0
+      ],
+      [
+        2,
+        6,
+        28,
+        19,
+        4
+      ]
+    ]
+  }
+}
