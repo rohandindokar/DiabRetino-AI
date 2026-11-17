@@ -25,6 +25,9 @@
                     <span class="status-dot" id="statusDot"></span>
                     <span id="statusText">Connecting…</span>
                 </div>
+                <button class="btn-text" onclick="document.getElementById('aboutModal').hidden=false" title="How it works">
+                    ⓘ How it works
+                </button>
                 <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
                     <svg id="themeIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
@@ -38,6 +41,19 @@
             </div>
         </div>
     </header>
+
+    <!-- ONBOARDING BANNER (shown only when no backend is configured) -->
+    <div class="banner" id="onboardingBanner" hidden>
+        <div class="banner-inner">
+            <div class="banner-ic" aria-hidden="true">🔌</div>
+            <div class="banner-copy">
+                <strong>Connect the AI engine to start grading.</strong>
+                <span>This page is the front-end; the model runs on a separate backend. Open <b>API settings</b> and paste your backend URL (e.g. your Render service), or run it locally at <span class="mono">http://localhost:8000</span>.</span>
+            </div>
+            <button class="banner-btn" onclick="openSettings()">Connect now</button>
+            <button class="banner-x" onclick="hideBanner()" aria-label="Dismiss">×</button>
+        </div>
+    </div>
 
     <main class="content">
         <!-- HERO -->
@@ -223,6 +239,44 @@
             </div>
         </section>
     </main>
+
+    <!-- ABOUT / HOW-IT-WORKS MODAL -->
+    <div class="modal" id="aboutModal" hidden>
+        <div class="modal-card wide">
+            <div class="modal-head">
+                <h3>How DiabRetino works</h3>
+                <button class="modal-x" onclick="document.getElementById('aboutModal').hidden=true" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body about-body">
+                <p><strong>In one line:</strong> this tool grades a retinal (fundus) photograph into one of the five ICDR
+                diabetic-retinopathy severity stages, shows the exact retinal regions that drove the decision, and issues a
+                printable clinical report.</p>
+
+                <h4>The pipeline</h4>
+                <ol class="about-steps">
+                    <li><b>Preprocess</b> — circular crop + Ben Graham local colour subtraction to bring out microaneurysms, exudates and haemorrhages.</li>
+                    <li><b>Dual backbone</b> — an SE-ResNet18 attention CNN reads <i>local lesion texture</i>; a compact Vision Transformer reads <i>global vascular context</i>. A learned gate fuses both.</li>
+                    <li><b>5-class head</b> — outputs ICDR stages 0–4 with a probability distribution.</li>
+                    <li><b>Explainability</b> — Grad-CAM heat-maps the regions the network actually used.</li>
+                    <li><b>Clinical report</b> — ICDR criteria, findings, urgency and laser/anti-VEGF referral flags.</li>
+                </ol>
+
+                <h4>Evidence (held-out 20% APTOS validation)</h4>
+                <div class="about-metrics" id="aboutMetrics">
+                    <p class="muted small">Metrics load here from the backend once connected — or see the "Model performance" panel on the page.</p>
+                </div>
+
+                <h4>Sourcing more test images</h4>
+                <ul class="about-list">
+                    <li><b>APTOS 2019</b> — kaggle.com/competitions/aptos2019-blindness-detection (the dataset used for training)</li>
+                    <li><b>EyePACS</b> — eyepacs.org/resources/data-downloads (DR + DME)</li>
+                    <li><b>MESSIDOR-2 / ODIR</b> — large public NPDR collections for the 5-class ICDR coding</li>
+                </ul>
+
+                <p class="about-disc">⚠️ Research / educational screening tool — it supports, and does not replace, an ophthalmologist.</p>
+            </div>
+        </div>
+    </div>
 
     <!-- SETTINGS MODAL -->
     <div class="modal" id="settingsModal" hidden>

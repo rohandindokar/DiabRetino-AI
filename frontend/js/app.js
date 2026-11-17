@@ -1,4 +1,16 @@
 /* DiabRetino AI — frontend controller */
+
+// Live production backend (Render). The site pre-wires this on the deployed
+// frontend host so it connects automatically; a user-saved URL still wins.
+const PROD_BACKEND = 'https://diabretino-ai-1.onrender.com';
+function isProdHost(host) {
+    // Pre-wire on static-host deployments (Vercel / Netlify / GH Pages),
+    // and never on localhost or on the Render host itself.
+    if (host === 'localhost' || host === '127.0.0.1') return false;
+    if (host.endsWith('.onrender.com')) return false;
+    return host.endsWith('.vercel.app') || host.endsWith('.netlify.app');
+}
+
 const state = {
     api: localStorage.getItem('diabretino_api') || '',
     file: null,
@@ -9,19 +21,39 @@ const state = {
 
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme();
-    // Local dev / Docker: default to the local backend so it just works.
-    // Deployed (Vercel/Netlify): leave empty and let the user set the Render URL.
-    if (!state.api && location.hostname === 'localhost') {
+    // Backend URL precedence:
+    //   1. ?api= query param (lets a deployment pre-wire the backend)
+    //   2. saved value in localStorage
+    //   3. localhost default only when actually on localhost (local dev / docker)
+    const qApi = new URLSearchParams(location.search).get('api');
+    if (qApi) {
+        state.api = qApi.replace(/\/$/, '');
+        localStorage.setItem('diabretino_api', state.api);
+    } else if (!state.api && location.hostname === 'localhost') {
         state.api = 'http://localhost:8000';
+    } else if (!state.api && isProdHost(location.hostname)) {
+        // Production deployment: pre-wire the live Render backend so the site
+        // connects automatically. Users can override it in API settings.
+        state.api = PROD_BACKEND;
+        localStorage.setItem('diabretino_api', state.api);
     }
     setupDropzone();
     setupClipboard();
     setupTabs();
     setupBatch();
+    closeModalsOnBackdrop();
     checkHealth();
     loadSamples();
     loadMetrics();
 });
+
+function closeModalsOnBackdrop() {
+    ['settingsModal', 'aboutModal'].forEach(id => {
+        document.getElementById(id).addEventListener('click', e => {
+            if (e.target.id === id) document.getElementById(id).hidden = true;
+        });
+    });
+}
 
 /* ---------- theme ---------- */
 function applyTheme() {
@@ -59,25 +91,39 @@ async function testApi() {
     } catch { msg.textContent = '✕ Unreachable'; msg.style.color = '#ef4444'; }
 }
 
+/* ---------- onboarding banner ---------- */
+function hideBanner() {
+    document.getElementById('onboardingBanner').hidden = true;
+}
+function showBanner() {
+    document.getElementById('onboardingBanner').hidden = false;
+}
+
 /* ---------- health ---------- */
 async function checkHealth() {
     const dot = document.getElementById('statusDot');
     const txt = document.getElementById('statusText');
+
     if (!state.api) {
         dot.className = 'status-dot err';
-        txt.textContent = 'No API set — click ⚙';
+        txt.textContent = 'No API set';
+        showBanner();
         return;
     }
+
     try {
         const r = await fetch(state.api + '/api/health');
+        if (!r.ok) throw 0;
         const d = await r.json();
-        if (r.ok) {
-            dot.className = 'status-dot ok';
-            txt.textContent = `Online · ${String(d.device).toUpperCase()}`;
-        } else throw 0;
+        dot.className = 'status-dot ok';
+        txt.textContent = `Online · ${String(d.device).toUpperCase()}`;
+        hideBanner();
     } catch {
         dot.className = 'status-dot err';
-        txt.textContent = 'Backend offline';
+        txt.textContent = 'Connecting…';
+        // Render services spin down; a 503 is a wake-up, not a failure.
+        showBanner();
+        setTimeout(checkHealth, 5000);
     }
 }
 
@@ -329,10 +375,22 @@ async function loadMetrics() {
         if (!r.ok) throw new Error('No metrics yet');
         const data = await r.json();
         renderPerf(data);
+        renderAboutMetrics(data);
         if (loading) loading.remove();
     } catch (e) {
-        loading.textContent = 'Training metrics not available yet (run the model training pipeline).';
+        loading.textContent = 'Metrics load once the backend is reachable (Render services wake on first request).';
     }
+}
+
+function renderAboutMetrics(data) {
+    const host = document.getElementById('aboutMetrics');
+    if (!host || !data || !data.models || !data.models.length) return;
+    const m = data.models[0];
+    host.innerHTML = `
+        <div class="about-metric-row"><span class="am-k">Accuracy (held-out)</span><span class="am-v">${(m.accuracy*100).toFixed(1)}%</span></div>
+        <div class="about-metric-row"><span class="am-k">Macro F1</span><span class="am-v">${(m.macro_f1*100).toFixed(1)}%</span></div>
+        <div class="about-metric-row"><span class="am-k">Weighted F1</span><span class="am-v">${(m.weighted_f1*100).toFixed(1)}%</span></div>
+        <p class="about-disc">Evaluated on a held-out 20% validation split of the APTOS 2019 dataset. Full per-class table and confusion matrix in the "Model performance" panel below.</p>`;
 }
 
 function renderPerf(data) {
@@ -340,15 +398,17 @@ function renderPerf(data) {
     const classes = data.class_names || [];
     const wrapper = document.createElement('div');
 
-    // model cards
+    // model cards (with an accuracy gauge on the flagship)
     const cards = document.createElement('div');
     cards.className = 'perf-models';
-    (data.models || []).forEach(m => {
+    (data.models || []).forEach((m, idx) => {
         const flag = m.model === 'hybrid_vit_cnn' ? ' <span class="flag">★ flagship</span>' : '';
+        const isFlagship = m.model === 'hybrid_vit_cnn';
         const card = document.createElement('div');
-        card.className = 'perf-card';
+        card.className = 'perf-card' + (isFlagship ? ' flagship' : '');
         card.innerHTML = `
             <div class="perf-name">${m.model}${flag}</div>
+            ${isFlagship ? accuracyGauge(m.accuracy, m.macro_f1) : ''}
             <div class="perf-stat"><span class="k">Accuracy</span><span class="v">${(m.accuracy*100).toFixed(1)}%</span></div>
             <div class="perf-stat"><span class="k">Macro F1</span><span class="v">${(m.macro_f1*100).toFixed(1)}%</span></div>
             <div class="perf-stat"><span class="k">Weighted F1</span><span class="v">${(m.weighted_f1*100).toFixed(1)}%</span></div>
@@ -358,25 +418,31 @@ function renderPerf(data) {
     });
     wrapper.appendChild(cards);
 
-    // confusion matrix for the flagship
+    // confusion matrix for the flagship (color-scaled)
     const flagship = (data.models || []).find(m => m.model === 'hybrid_vit_cnn') || (data.models||[])[0];
     if (flagship && flagship.confusion_matrix) {
         const cmBlock = document.createElement('div');
         cmBlock.className = 'cm-block';
         cmBlock.innerHTML = `<h4>Confusion matrix — ${flagship.model} (rows = actual, cols = predicted)</h4>`;
+        const maxCell = Math.max(1, ...flagship.confusion_matrix.flat());
         const grid = document.createElement('div');
         grid.className = 'cm-grid';
-        // header row
         grid.appendChild(cell(''));
         classes.forEach(c => grid.appendChild(cell(c.replace('_',' '), true)));
         flagship.confusion_matrix.forEach((row, i) => {
             grid.appendChild(cell(classes[i].replace('_',' '), true));
             row.forEach((val, j) => {
-                const c = cell(val === 0 ? '' : val, false, i === j ? 'diag' : '');
+                const c = cell(val === 0 ? '' : val, false, i === j ? 'diag' : 'off');
+                // intensity scaled by value, green on the diagonal / red off it
+                const t = val / maxCell;
+                if (i === j) c.style.background = `rgba(16,185,129,${0.15 + 0.5*t})`;
+                else if (val > 0) c.style.background = `rgba(239,68,68,${0.12 + 0.5*t})`;
                 grid.appendChild(c);
             });
         });
         cmBlock.appendChild(grid);
+        cmBlock.insertAdjacentHTML('beforeend',
+            '<div class="cm-legend"><span class="lg lg-good"></span> correct &nbsp; <span class="lg lg-bad"></span> mislabelled</div>');
         wrapper.appendChild(cmBlock);
     }
 
@@ -392,6 +458,24 @@ function renderPerf(data) {
 
     body.innerHTML = '';
     body.appendChild(wrapper);
+}
+
+function accuracyGauge(acc, f1) {
+    const pct = Math.round(acc * 100);
+    // SVG donut: 260° sweep, value-colored arc
+    const r = 30, c = 2 * Math.PI * r, arc = c * (acc) * 0.75;
+    return `
+        <div class="gauge" title="Accuracy / Macro F1">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+                <circle cx="40" cy="40" r="${r}" fill="none" stroke="var(--panel)" stroke-width="8"/>
+                <circle cx="40" cy="40" r="${r}" fill="none" stroke="var(--accent)" stroke-width="8"
+                    stroke-linecap="round" stroke-dasharray="${arc} ${c}"
+                    transform="rotate(135 40 40)"
+                    style="transition:stroke-dasharray 1s ease"/>
+                <text x="40" y="37" text-anchor="middle" class="gauge-num">${pct}%</text>
+                <text x="40" y="52" text-anchor="middle" class="gauge-sub">acc</text>
+            </svg>
+        </div>`;
 }
 
 function cell(text, isHeader, cls) {
